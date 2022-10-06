@@ -42,8 +42,6 @@ endmacro(SetDefaultMemSize)
 # Helper function that generates targets that will attempt to generate a ./simulate style script
 function(GenerateSimulateScript)
     set(error "")
-    set(KERNEL_IMAGE_NAME "$<TARGET_PROPERTY:rootserver_image,KERNEL_IMAGE_NAME>")
-    set(IMAGE_NAME "$<TARGET_PROPERTY:rootserver_image,IMAGE_NAME>")
     # Define simulation script target if it doesn't exist to simplify the generator expressions
     if(NOT (TARGET simulation_script_prop_target))
         add_custom_target(simulation_script_prop_target)
@@ -192,6 +190,8 @@ function(GenerateSimulateScript)
         )
     else()
         # We assume a x86 host, but will provide options to override the default gdb binary
+        set(KERNEL_IMAGE_NAME "$<TARGET_PROPERTY:rootserver_image,KERNEL_IMAGE_NAME>")
+        set(IMAGE_NAME "$<TARGET_PROPERTY:rootserver_image,IMAGE_NAME>")
         if(KernelArchX86)
             set(GdbBinary "gdb")
         else()

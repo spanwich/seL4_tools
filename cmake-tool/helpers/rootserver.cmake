@@ -38,12 +38,12 @@ if(UseRiscVOpenSBI)
 endif()
 
 function(DeclareRootserver rootservername)
-    SetSeL4Start(${rootservername})
-    set_property(
-        TARGET ${rootservername}
-        APPEND_STRING
-        PROPERTY LINK_FLAGS " -Wl,-T ${TLS_ROOTSERVER} "
-    )
+    # SetSeL4Start(${rootservername})
+    # set_property(
+    #     TARGET ${rootservername}
+    #     APPEND_STRING
+    #     PROPERTY LINK_FLAGS " -Wl,-T ${TLS_ROOTSERVER} "
+    # )
     if("${KernelArch}" STREQUAL "x86")
         set(
             IMAGE_NAME
@@ -219,17 +219,17 @@ function(DeclareRootserver rootservername)
                 DEPENDS ${elf_target_file} elfloader
             )
         endif()
-        add_custom_target(rootserver_image ALL DEPENDS "${IMAGE_NAME}" elfloader ${rootservername})
+        add_custom_target(rootserver_image ALL DEPENDS "${IMAGE_NAME}" elfloader)
         # Set the output name for the rootserver instead of leaving it to the generator. We need
         # to do this so that we can put the rootserver image name as a property and have the
         # elfloader pull it out using a generator expression, since generator expression cannot
         # nest (i.e. in the expansion of $<TARGET_FILE:tgt> 'tgt' cannot itself be a generator
         # expression. Nor can a generator expression expand to another generator expression and
         # get expanded again. As a result we just fix the output name and location of the rootserver
-        set_property(TARGET "${rootservername}" PROPERTY OUTPUT_NAME "${rootservername}")
-        get_property(rootimage TARGET "${rootservername}" PROPERTY OUTPUT_NAME)
-        get_property(dir TARGET "${rootservername}" PROPERTY BINARY_DIR)
-        set_property(TARGET rootserver_image PROPERTY ROOTSERVER_IMAGE "${dir}/${rootimage}")
+        # set_property(TARGET "${rootservername}" PROPERTY OUTPUT_NAME "${rootservername}")
+        # get_property(rootimage TARGET "${rootservername}" PROPERTY OUTPUT_NAME)
+        # get_property(dir TARGET "${rootservername}" PROPERTY BINARY_DIR)
+        # set_property(TARGET rootserver_image PROPERTY ROOTSERVER_IMAGE "${dir}/${rootservername}")
     else()
         message(FATAL_ERROR "Unsupported architecture.")
     endif()
