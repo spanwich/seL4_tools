@@ -72,7 +72,9 @@ END_FUNC(leave_hyp)
 
 BEGIN_FUNC(arm_enable_hyp_mmu)
     stp     x29, x30, [sp, #-16]!
+    stp     x27, x28, [sp, #-16]!
     mov     x29, sp
+    mov     x27, x0
 
     bl      flush_dcache
 
@@ -99,8 +101,7 @@ BEGIN_FUNC(arm_enable_hyp_mmu)
     msr     tcr_el2, x8
     isb
 
-    adrp    x8, _boot_pgd_down
-    msr     ttbr0_el2, x8
+    msr     ttbr0_el2, x27
     isb
 
     tlbi    alle2is
@@ -114,6 +115,7 @@ BEGIN_FUNC(arm_enable_hyp_mmu)
     tlbi    alle2is
     dsb     ish
     isb
+    ldp     x27, x28, [sp], #16
     ldp     x29, x30, [sp], #16
     ret
 END_FUNC(arm_enable_hyp_mmu)

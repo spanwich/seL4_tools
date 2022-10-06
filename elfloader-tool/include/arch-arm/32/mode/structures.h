@@ -5,6 +5,8 @@
  */
 
 #pragma once
+#include <autoconf.h>
+#include <elfloader/gen_config.h>
 
 #define ARM_SECTION_BITS      20
 #define ARM_1GB_BLOCK_BITS    30
@@ -28,9 +30,10 @@
 
 #define GET_PT_INDEX(x)       (((x) >> (PAGE_BITS)) & MASK(PT_BITS))
 
-extern uint32_t _boot_pd[BIT(PD_BITS)];
-extern uint32_t _boot_pt[BIT(PT_BITS)];
+extern uint32_t _boot_pd[CONFIG_MAX_NUM_NODES][BIT(PD_BITS)];
+extern uint32_t _boot_pt[CONFIG_MAX_NUM_NODES][BIT(PT_BITS)];
 
-extern uint64_t _lpae_boot_pgd[BIT(HYP_PGD_BITS)];
-extern uint64_t _lpae_boot_pmd[BIT(HYP_PGD_BITS + HYP_PMD_BITS)];
+extern uint64_t _lpae_boot_pgd[CONFIG_MAX_NUM_NODES][BIT(HYP_PGD_BITS)];
+extern uint64_t _lpae_boot_pmd[CONFIG_MAX_NUM_NODES][BIT(HYP_PGD_BITS + HYP_PMD_BITS)];
 
+extern int pd_node_id;

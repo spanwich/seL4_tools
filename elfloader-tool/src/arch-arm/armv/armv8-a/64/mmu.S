@@ -41,7 +41,10 @@ END_FUNC(flush_dcache)
 BEGIN_FUNC(arm_enable_mmu)
     /* We call nested functions, follow the ABI. */
     stp     x29, x30, [sp, #-16]!
+    stp     x27, x28, [sp, #-16]!
     mov     x29, sp
+    mov     x27, x0
+    mov     x28, x1
 
     bl      flush_dcache
 
@@ -76,10 +79,8 @@ BEGIN_FUNC(arm_enable_mmu)
     msr     tcr_el1, x10
 
     /* Setup page tables */
-    adrp    x8, _boot_pgd_down
-    msr     ttbr0_el1, x8
-    adrp    x8, _boot_pgd_up
-    msr     ttbr1_el1, x8
+    msr     ttbr0_el1, x28
+    msr     ttbr1_el1, x27
     isb
 
     /* invalidate all TLB entries for EL1 */
@@ -92,6 +93,7 @@ BEGIN_FUNC(arm_enable_mmu)
     adrp    x8, arm_vector_table
     msr     vbar_el1, x8
 
+    ldp     x27, x28, [sp], #16
     ldp     x29, x30, [sp], #16
     ret
 END_FUNC(arm_enable_mmu)

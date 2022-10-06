@@ -5,6 +5,8 @@
  */
 
 #pragma once
+#include <autoconf.h>
+#include <elfloader/gen_config.h>
 
 #define ARM_1GB_BLOCK_BITS      30
 #define ARM_2MB_BLOCK_BITS      21
@@ -25,10 +27,10 @@
 #define GET_PUD_INDEX(x)        (((x) >> (ARM_2MB_BLOCK_BITS + PMD_BITS)) & MASK(PUD_BITS))
 #define GET_PMD_INDEX(x)        (((x) >> (ARM_2MB_BLOCK_BITS)) & MASK(PMD_BITS))
 
-extern uint64_t _boot_pgd_up[BIT(PGD_BITS)];
-extern uint64_t _boot_pud_up[BIT(PUD_BITS)];
-extern uint64_t _boot_pmd_up[BIT(PMD_BITS)];
+extern uint64_t _boot_pgd_up[CONFIG_MAX_NUM_NODES][BIT(PGD_BITS)];
+extern uint64_t _boot_pud_up[CONFIG_MAX_NUM_NODES][BIT(PUD_BITS)];
+extern uint64_t _boot_pmd_up[CONFIG_MAX_NUM_NODES][BIT(PMD_BITS)];
 
-extern uint64_t _boot_pgd_down[BIT(PGD_BITS)];
-extern uint64_t _boot_pud_down[BIT(PUD_BITS)];
+extern uint64_t _boot_pgd_down[CONFIG_MAX_NUM_NODES][BIT(PGD_BITS)];
+extern uint64_t _boot_pud_down[CONFIG_MAX_NUM_NODES][BIT(PUD_BITS)];
 

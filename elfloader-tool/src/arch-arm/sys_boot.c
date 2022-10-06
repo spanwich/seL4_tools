@@ -15,6 +15,7 @@
 #include <abort.h>
 #include <strops.h>
 #include <cpuid.h>
+#include <mode/structures.h>
 
 #include <binaries/efi/efi.h>
 #include <elfloader.h>
@@ -197,11 +198,11 @@ void continue_boot(int was_relocated)
         extern void disable_caches_hyp();
         disable_caches_hyp();
 #endif
-        init_hyp_boot_vspace(&kernel_info);
+        init_hyp_boot_vspace(&kernel_info[0], 0);
     } else {
         /* If we are not in HYP mode, we enable the SV MMU and paging
          * just in case the kernel does not support hyp mode. */
-        init_boot_vspace(&kernel_info);
+        init_boot_vspace(&kernel_info[0], 0);
     }
 
 #if CONFIG_MAX_NUM_NODES > 1
@@ -210,10 +211,21 @@ void continue_boot(int was_relocated)
 
     if (is_hyp_mode()) {
         printf("Enabling hypervisor MMU and paging\n");
+#ifdef CONFIG_ARCH_AARCH64
+        arm_enable_hyp_mmu((word_t)_boot_pgd_down[0]);
+#else
+        pd_node_id = 0;
         arm_enable_hyp_mmu();
+#endif
     } else {
         printf("Enabling MMU and paging\n");
+#ifdef CONFIG_ARCH_AARCH64
+        arm_enable_mmu((word_t)_boot_pgd_up[0], (word_t)_boot_pgd_down[0]);
+#else
+        pd_node_id = 0;
         arm_enable_mmu();
+#endif
+
     }
 
     /* Enter kernel. The UART may no longer be accessible here. */

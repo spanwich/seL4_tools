@@ -21,13 +21,22 @@ typedef void (*init_arm_kernel_t)(word_t ui_p_reg_start,
 
 
 /* Enable the mmu. */
+#ifdef CONFIG_ARCH_AARCH64
+extern void arm_enable_mmu(word_t pgd_up, word_t pgd_down);
+#else
 extern void arm_enable_mmu(void);
+#endif
+
+#ifdef CONFIG_ARCH_AARCH64
+extern void arm_enable_hyp_mmu(word_t pgd_down);
+#else
 extern void arm_enable_hyp_mmu(void);
+#endif
 
 
 /* Setup boot VSpace. */
-void init_boot_vspace(struct image_info *kernel_info);
-void init_hyp_boot_vspace(struct image_info *kernel_info);
+void init_boot_vspace(struct image_info *kernel_info, word_t id);
+void init_hyp_boot_vspace(struct image_info *kernel_info, word_t id);
 
 /* Assembly functions. */
 extern void flush_dcache(void);
