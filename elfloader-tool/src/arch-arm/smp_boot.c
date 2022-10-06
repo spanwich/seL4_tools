@@ -5,6 +5,7 @@
  */
 
 #include <autoconf.h>
+#undef CONFIG_MAX_NUM_NODES
 #include <elfloader/gen_config.h>
 #include <devices_gen.h>
 #include <drivers.h>
@@ -17,27 +18,26 @@
 #include <elfloader.h>
 #include <armv/smp.h>
 #include <armv/machine.h>
+#include <mode/structures.h>
 
 #if CONFIG_MAX_NUM_NODES > 1
 static volatile int non_boot_lock = 0;
+extern volatile int core_up[CONFIG_MAX_NUM_NODES];
 
 void arm_disable_dcaches(void);
 
-extern void const *dtb;
-extern uint32_t dtb_size;
+extern struct image_info kernel_info[CONFIG_MAX_NUM_NODES];
+extern struct image_info user_info[CONFIG_MAX_NUM_NODES];
+extern void const *dtb[CONFIG_MAX_NUM_NODES];
+extern size_t dtb_size[CONFIG_MAX_NUM_NODES];
+
 
 /* Entry point for all CPUs other than the initial. */
-void non_boot_main(void)
+void non_boot_main(word_t id)
 {
 #ifndef CONFIG_ARCH_AARCH64
     arm_disable_dcaches();
 #endif
-    /* Spin until the first CPU has finished initialisation. */
-    while (!non_boot_lock) {
-#ifndef CONFIG_ARCH_AARCH64
-        cpu_idle();
-#endif
-    }
 
     /* Do any driver specific non_boot core init */
     if (initialise_devices_non_boot()) {
@@ -51,17 +51,58 @@ void non_boot_main(void)
         leave_hyp();
     }
 #endif
-    /* Enable the MMU, and enter the kernel. */
-    if (is_hyp_mode()) {
-        arm_enable_hyp_mmu();
-    } else {
-        arm_enable_mmu();
+    word_t mpidr = read_cpuid_mpidr();
+    printf("Booting cpu id = 0x%x, index=%d\n", mpidr, id);
+
+
+    unsigned int num_apps = 0;
+    int ret = load_images(&kernel_info[id], &user_info[id], 1, &num_apps,
+                          NULL, &dtb[id], &dtb_size[id], id);
+    if (0 != ret) {
+        printf("ERROR: image loading failed\n");
+        abort();
     }
 
+    /* Setup MMU. */
+    if (is_hyp_mode()) {
+#ifdef CONFIG_ARCH_AARCH64
+        extern void disable_caches_hyp();
+        disable_caches_hyp();
+#endif
+        init_hyp_boot_vspace(&kernel_info[id], id);
+    } else {
+        /* If we are not in HYP mode, we enable the SV MMU and paging
+         * just in case the kernel does not support hyp mode. */
+        init_boot_vspace(&kernel_info[id], id);
+    }
+
+    /* Enable the MMU, and enter the kernel. */
+    if (is_hyp_mode()) {
+#ifdef CONFIG_ARCH_AARCH64
+        arm_enable_hyp_mmu((word_t)_boot_pgd_down[id]);
+#else
+        pd_node_id = id;
+        arm_enable_hyp_mmu();
+#endif
+    } else {
+#ifdef CONFIG_ARCH_AARCH64
+        arm_enable_mmu((word_t)_boot_pgd_up[id], (word_t)_boot_pgd_down[id]);
+#else
+        pd_node_id = id;
+        arm_enable_mmu();
+#endif
+    }
+    printf("jump to kernel %lx %lx\n", kernel_info[id].virt_entry, user_info[id].phys_region_start);
+
+    // Signal that we've initialized this core.
+    dsb();
+    core_up[id] = id;
+    dsb();
+
     /* Jump to the kernel. */
-    ((init_arm_kernel_t)kernel_info.virt_entry)(user_info.phys_region_start,
-                                                user_info.phys_region_end, user_info.phys_virt_offset,
-                                                user_info.virt_entry, (paddr_t)dtb, dtb_size);
+    ((init_arm_kernel_t)kernel_info[id].virt_entry)(user_info[id].phys_region_start,
+                                                user_info[id].phys_region_end, user_info[id].phys_virt_offset,
+                                                user_info[id].virt_entry, (paddr_t)dtb[id], dtb_size[id]);
 
     printf("AP Kernel returned back to the elf-loader.\n");
     abort();
@@ -89,7 +130,7 @@ WEAK void init_cpus(void)
         abort();
     }
 
-    printf("Boot cpu id = 0x%x, index=%d\n", mpidr, booting_cpu_index);
+    printf("Booting cpu id = 0x%x, index=%d\n", mpidr, booting_cpu_index);
     /*
      * We want to boot CPUs in the same cluster before we boot CPUs in another cluster.
      * This is important on systems like TX2, where the system boots on the A57 cluster,
@@ -134,6 +175,6 @@ void smp_boot(void)
     arm_disable_dcaches();
 #endif
     init_cpus();
-    non_boot_lock = 1;
+
 }
 #endif /* CONFIG_MAX_NUM_NODES */

@@ -18,7 +18,7 @@ unsigned long core_stacks[CONFIG_MAX_NUM_NODES][STACK_SIZE / sizeof(unsigned lon
 volatile int core_up[CONFIG_MAX_NUM_NODES];
 
 extern void core_entry_head(void);
-extern void non_boot_main(void);
+extern void non_boot_main(word_t id);
 
 void core_entry(uint32_t sp)
 {
@@ -26,9 +26,7 @@ void core_entry(uint32_t sp)
     // get the logic ID
     id = (sp - (unsigned long)&core_stacks[0][0]) / STACK_SIZE;
 
-    core_up[id] = id;
-    dsb();
-    non_boot_main();
+    non_boot_main(id);
 }
 
 int is_core_up(int i)

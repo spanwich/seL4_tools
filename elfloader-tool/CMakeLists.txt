@@ -103,6 +103,8 @@ config_option(
     DEPENDS "NOT ElfloaderImageEFI"
 )
 
+config_set(KernelMaxNumNodes2 MAX_NUM_NODES ${ElfLoaderNumNodes})
+
 add_config_library(elfloader "${configure_string}")
 
 add_compile_options(-D_XOPEN_SOURCE=700 -ffreestanding -Wall -Werror -Wextra)
@@ -251,28 +253,32 @@ endif()
 list(SORT files)
 
 set(cpio_files "")
-add_custom_command(
-    OUTPUT "kernel.elf"
-    COMMAND
-        ${CMAKE_STRIP} $<TARGET_FILE:kernel.elf> -o ${CMAKE_CURRENT_BINARY_DIR}/kernel.elf
-    VERBATIM
-    DEPENDS "$<TARGET_FILE:kernel.elf>"
-)
-list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel.elf")
 
+foreach(overlay RANGE 1 ${ElfLoaderNumNodes})
+    add_custom_command(
+        OUTPUT "node_${overlay}/kernel.elf"
+        COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/node_${overlay}
+        COMMAND
+            ${CMAKE_STRIP} $<TARGET_FILE:seL4-${overlay}-kernel> -o ${CMAKE_CURRENT_BINARY_DIR}/node_${overlay}/kernel.elf
+        VERBATIM
+        DEPENDS "$<TARGET_FILE:seL4-${overlay}-kernel>"
+    )
+    list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/node_${overlay}/kernel.elf")
 
+    if(ElfloaderIncludeDtb)
+        list(APPEND cpio_files "$<TARGET_FILE:seL4-${overlay}-dtb>")
+    endif()
+    add_custom_command(
+        OUTPUT "node_${overlay}/rootserver"
+        COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/node_${overlay}
+        COMMAND
+            ${CMAKE_STRIP} $<TARGET_FILE:rootserver-${overlay}> -o ${CMAKE_CURRENT_BINARY_DIR}/node_${overlay}/rootserver
+        VERBATIM
+        DEPENDS "$<TARGET_FILE:rootserver-${overlay}>"
+    )
+    list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/node_${overlay}/rootserver")
+endforeach()
 
-if(ElfloaderIncludeDtb)
-    list(APPEND cpio_files "${KernelDTBPath}")
-endif()
-add_custom_command(
-    OUTPUT "rootserver"
-    COMMAND
-        ${CMAKE_STRIP} $<TARGET_PROPERTY:rootserver_image,ROOTSERVER_IMAGE> -o ${CMAKE_CURRENT_BINARY_DIR}/rootserver
-    VERBATIM
-    DEPENDS "$<TARGET_PROPERTY:rootserver_image,ROOTSERVER_IMAGE>"
-)
-list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/rootserver")
 if(NOT ${ElfloaderHashInstructions} STREQUAL "hash_none")
     set(hash_command "")
     if(ElfloaderHashSHA)

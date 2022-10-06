@@ -5,6 +5,7 @@
  */
 
 #include <autoconf.h>
+#undef CONFIG_MAX_NUM_NODES
 #include <elfloader/gen_config.h>
 #include <assembler.h>
 #include <mode/assembler.h>

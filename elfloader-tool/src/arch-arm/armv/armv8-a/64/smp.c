@@ -5,6 +5,7 @@
  */
 
 #include <autoconf.h>
+#undef CONFIG_MAX_NUM_NODES
 #include <elfloader/gen_config.h>
 
 #if CONFIG_MAX_NUM_NODES > 1
@@ -18,7 +19,7 @@ unsigned long core_stacks[CONFIG_MAX_NUM_NODES][STACK_SIZE / sizeof(unsigned lon
 volatile int core_up[CONFIG_MAX_NUM_NODES];
 
 extern void core_entry_head(void);
-extern void non_boot_main(void);
+extern void non_boot_main(word_t id);
 
 void core_entry(uint64_t sp)
 {
@@ -28,9 +29,7 @@ void core_entry(uint64_t sp)
     // save the ID and pass it to the kernel
     MSR("tpidr_el1", id);
 
-    core_up[id] = id;
-    dmb();
-    non_boot_main();
+    non_boot_main(id);
 }
 
 int is_core_up(int i)

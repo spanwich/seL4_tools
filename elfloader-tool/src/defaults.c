@@ -9,6 +9,9 @@
  * plat-* if there is a more appropriate implementation for a given platform.
  */
 
+#include <autoconf.h>
+#undef CONFIG_MAX_NUM_NODES
+#include <elfloader/gen_config.h>
 #include <elfloader_common.h>
 #include <printf.h>
 

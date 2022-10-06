@@ -9,6 +9,7 @@
 /* Driver for the ARM Snoop Control Unit (SCU) used on multicore systems */
 
 #include <autoconf.h>
+#undef CONFIG_MAX_NUM_NODES
 #include <elfloader/gen_config.h>
 
 #if CONFIG_MAX_NUM_NODES > 1

@@ -7,8 +7,6 @@
 
 #pragma once
 
-#include <autoconf.h>
-#include <elfloader/gen_config.h>
 #include <types.h>
 
 typedef uintptr_t paddr_t;

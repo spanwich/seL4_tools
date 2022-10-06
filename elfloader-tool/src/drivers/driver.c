@@ -3,6 +3,9 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
+#include <autoconf.h>
+#undef CONFIG_MAX_NUM_NODES
+#include <elfloader/gen_config.h>
 #include <elfloader_common.h>
 #include <drivers/common.h>
 #include <printf.h>
