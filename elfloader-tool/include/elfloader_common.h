@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <autoconf.h>
+#include <elfloader/gen_config.h>
 #include <types.h>
 
 typedef uintptr_t paddr_t;
@@ -74,9 +76,9 @@ struct image_info {
     word_t phys_virt_offset;
 };
 
-extern struct image_info kernel_info;
-extern struct image_info user_info;
-extern void const *dtb;
+extern struct image_info kernel_info[CONFIG_MAX_NUM_NODES];
+extern struct image_info user_info[CONFIG_MAX_NUM_NODES];
+extern void const *dtb[CONFIG_MAX_NUM_NODES];
 
 /* Symbols defined in linker scripts. */
 extern char _text[];
@@ -95,7 +97,8 @@ int load_images(
     unsigned int *num_images,
     void const *bootloader_dtb,
     void const **chosen_dtb,
-    size_t *chosen_dtb_size);
+    size_t *chosen_dtb_size,
+    int node_id);
 
 /* Platform functions */
 void platform_init(void);

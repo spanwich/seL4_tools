@@ -388,7 +388,8 @@ int load_images(
     unsigned int *num_images,
     void const *bootloader_dtb,
     void const **chosen_dtb,
-    size_t *chosen_dtb_size)
+    size_t *chosen_dtb_size,
+    int second_kernel)
 {
     int ret;
     uint64_t kernel_phys_start, kernel_phys_end;
@@ -402,9 +403,11 @@ int load_images(
 
     /* Load kernel. */
     unsigned long cpio_file_size = 0;
-    void const *kernel_elf_blob = cpio_get_file(cpio,
+    const char *filename;
+    void const *kernel_elf_blob = cpio_get_entry(cpio,
                                                 cpio_len,
-                                                "kernel.elf",
+                                                0 + (3*second_kernel),
+                                                &filename,
                                                 &cpio_file_size);
     if (kernel_elf_blob == NULL) {
         printf("ERROR: No kernel image present in archive\n");
@@ -445,7 +448,7 @@ int load_images(
          * devices).  But we are freestanding (on the "bare metal"), and using
          * our own unbuffered printf() implementation.
          */
-        dtb = cpio_get_file(cpio, cpio_len, "kernel.dtb", NULL);
+        dtb = cpio_get_entry(cpio, cpio_len, 1 + (3*second_kernel), &filename, NULL);
         if (dtb == NULL) {
             printf("not found.\n");
         } else {
@@ -523,13 +526,13 @@ int load_images(
      * (n)'th CPU.
      */
     unsigned int user_elf_offset = 2;
-    cpio_get_entry(cpio, cpio_len, 0, &elf_filename, NULL);
+    cpio_get_entry(cpio, cpio_len, 0+ (3*second_kernel), &elf_filename, NULL);
     ret = strcmp(elf_filename, "kernel.elf");
     if (0 != ret) {
         printf("ERROR: Kernel image not first image in archive\n");
         return -1;
     }
-    cpio_get_entry(cpio, cpio_len, 1, &elf_filename, NULL);
+    cpio_get_entry(cpio, cpio_len, 1+ (3*second_kernel), &elf_filename, NULL);
     ret = strcmp(elf_filename, "kernel.dtb");
     if (0 != ret) {
         if (has_dtb_cpio) {
@@ -547,7 +550,7 @@ int load_images(
     for (unsigned int i = 0; i < max_user_images; i++) {
         void const *user_elf = cpio_get_entry(cpio,
                                               cpio_len,
-                                              i + user_elf_offset,
+                                              i + user_elf_offset+ (3*second_kernel),
                                               NULL,
                                               NULL);
         if (user_elf == NULL) {
@@ -580,7 +583,7 @@ int load_images(
         unsigned long cpio_file_size = 0;
         void const *user_elf = cpio_get_entry(cpio,
                                               cpio_len,
-                                              i + user_elf_offset,
+                                              i + user_elf_offset+ (3*second_kernel),
                                               &elf_filename,
                                               &cpio_file_size);
         if (user_elf == NULL) {

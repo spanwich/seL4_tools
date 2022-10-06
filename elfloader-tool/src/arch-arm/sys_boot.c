@@ -30,10 +30,10 @@ ALIGN(BIT(PAGE_BITS)) VISIBLE
 char core_stack_alloc[CONFIG_MAX_NUM_NODES][BIT(PAGE_BITS)];
 #endif
 
-struct image_info kernel_info;
-struct image_info user_info;
-void const *dtb;
-size_t dtb_size;
+struct image_info kernel_info[CONFIG_MAX_NUM_NODES];
+struct image_info user_info[CONFIG_MAX_NUM_NODES];
+void const *dtb[CONFIG_MAX_NUM_NODES];
+size_t dtb_size[CONFIG_MAX_NUM_NODES];
 
 extern void finish_relocation(int offset, void *_dynamic, unsigned int total_offset);
 void continue_boot(int was_relocated);
@@ -53,7 +53,7 @@ void relocate_below_kernel(void)
     uintptr_t UNUSED start = (uintptr_t)_text;
     uintptr_t end = (uintptr_t)_end;
 
-    if (end <= kernel_info.virt_region_start) {
+    if (end <= kernel_info[0].virt_region_start) {
         /*
          * If the ELF loader is already below the kernel,
          * skip relocation.
@@ -77,7 +77,7 @@ void relocate_below_kernel(void)
      * The strictes alignment requirement we have is the 64K-aligned AArch32
      * page tables, so we use that to calculate the new base of the elfloader.
      */
-    uintptr_t new_base = kernel_info.virt_region_start - (ROUND_UP(size, MAX_ALIGN_BITS));
+    uintptr_t new_base = kernel_info[0].virt_region_start - (ROUND_UP(size, MAX_ALIGN_BITS));
     uint32_t offset = start - new_base;
     printf("relocating from %p-%p to %p-%p... size=0x%x (padded size = 0x%x)\n", start, end, new_base, new_base + size,
            size, ROUND_UP(size, MAX_ALIGN_BITS));
@@ -144,8 +144,8 @@ void main(UNUSED void *arg)
 
     /* Unpack ELF images into memory. */
     unsigned int num_apps = 0;
-    int ret = load_images(&kernel_info, &user_info, 1, &num_apps,
-                          bootloader_dtb, &dtb, &dtb_size);
+    int ret = load_images(&kernel_info[0], &user_info[0], 1, &num_apps,
+                          bootloader_dtb, &dtb[0], &dtb_size[0], 0);
     if (0 != ret) {
         printf("ERROR: image loading failed\n");
         abort();
@@ -217,16 +217,16 @@ void continue_boot(int was_relocated)
     }
 
     /* Enter kernel. The UART may no longer be accessible here. */
-    if ((uintptr_t)uart_get_mmio() < kernel_info.virt_region_start) {
+    if ((uintptr_t)uart_get_mmio() < kernel_info[0].virt_region_start) {
         printf("Jumping to kernel-image entry point...\n\n");
     }
 
-    ((init_arm_kernel_t)kernel_info.virt_entry)(user_info.phys_region_start,
-                                                user_info.phys_region_end,
-                                                user_info.phys_virt_offset,
-                                                user_info.virt_entry,
-                                                (word_t)dtb,
-                                                dtb_size);
+    ((init_arm_kernel_t)kernel_info[0].virt_entry)(user_info[0].phys_region_start,
+                                                user_info[0].phys_region_end,
+                                                user_info[0].phys_virt_offset,
+                                                user_info[0].virt_entry,
+                                                (word_t)dtb[0],
+                                                dtb_size[0]);
 
     /* We should never get here. */
     printf("ERROR: Kernel returned back to the ELF Loader\n");
