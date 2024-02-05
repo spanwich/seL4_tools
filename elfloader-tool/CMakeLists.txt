@@ -172,6 +172,7 @@ if(KernelArchARM)
         src/drivers/smp/*.c
         src/drivers/uart/*.c
         src/drivers/timer/*.c
+        src/drivers/gic/*.c
     )
 endif()
 

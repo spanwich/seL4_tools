@@ -27,6 +27,7 @@ enum driver_type {
     DRIVER_SMP,
     DRIVER_UART,
     DRIVER_TIMER,
+    DRIVER_IRQ,
     DRIVER_MAX
 };
 
