@@ -96,6 +96,21 @@ void relocate_below_kernel(void)
 #endif
 }
 
+
+#include <vm_mappings.h>
+
+#ifdef INLINE_BINARY
+
+#ifdef VM0_LINUX_NAME
+CALL_INLINE_BINARY(vm0_linux, VM0_LINUX_NAME)
+CALL_INLINE_BINARY(vm0_initrd, VM0_INITRD_NAME)
+#endif
+#ifdef VM1_LINUX_NAME
+CALL_INLINE_BINARY(vm1_linux, VM1_LINUX_NAME)
+CALL_INLINE_BINARY(vm1_initrd, VM1_INITRD_NAME)
+#endif
+#endif
+
 /*
  * Entry point.
  *
@@ -158,6 +173,46 @@ void main(UNUSED void *arg)
                num_apps);
         abort();
     }
+
+
+#ifdef INLINE_BINARY
+    printf("Loading VM images:\n");
+
+#define _VAR_STRINGIZE(...) #__VA_ARGS__
+#define VAR_STRINGIZE(...) _VAR_STRINGIZE(__VA_ARGS__)
+    word_t base, end, size;
+
+#ifdef VM0_LINUX_NAME
+    base = (word_t) &vm0_linux;
+    end = (word_t) &vm0_linux_end;
+    size = end - base;
+
+    printf("  " VAR_STRINGIZE(VM0_LINUX_NAME) " paddr=[%p..%p]\n", VM0_LINUX_ADDR, (VM0_LINUX_ADDR + size));
+    memcpy((void*)VM0_LINUX_ADDR, (void*)base, size);
+
+    base = (word_t) &vm0_initrd;
+    end = (word_t) &vm0_initrd_end;
+    size = end - base;
+
+    printf("  " VAR_STRINGIZE(VM0_INITRD_NAME) " paddr=[%p..%p]\n", VM0_INITRD_ADDR, (VM0_INITRD_ADDR + size));
+    memcpy((void*)VM0_INITRD_ADDR, (void*)base, size);
+#endif
+
+#ifdef VM1_LINUX_NAME
+    base = (word_t) &vm1_linux;
+    end = (word_t) &vm1_linux_end;
+    size = end - base;
+    printf("  " VAR_STRINGIZE(VM1_LINUX_NAME) " paddr=[%p..%p]\n", VM1_LINUX_ADDR, (VM1_LINUX_ADDR + size));
+    memcpy((void*)VM1_LINUX_ADDR, (void*)base, size);
+
+    base = (word_t) &vm1_initrd;
+    end = (word_t) &vm1_initrd_end;
+    size = end - base;
+    printf("  " VAR_STRINGIZE(VM1_INITRD_NAME) " paddr=[%p..%p]\n", VM1_INITRD_ADDR, (VM1_INITRD_ADDR + size));
+    memcpy((void*)VM1_INITRD_ADDR, (void*)base, size);
+#endif
+#endif
+
     /*
      * We don't really know where we've been loaded.
      * It's possible that EFI loaded us in a place

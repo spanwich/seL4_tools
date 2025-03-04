@@ -19,7 +19,7 @@ if(NOT KERNEL_FLAGS_PATH)
 endif()
 include(${KERNEL_FLAGS_PATH})
 include(cpio)
-
+set(CMAKE_BUILD_TYPE Release)
 set(configure_string "")
 
 config_choice(

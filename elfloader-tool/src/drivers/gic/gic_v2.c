@@ -74,6 +74,7 @@ static int gic_v2_init(struct elfloader_device *dev,
 	// Track whether initialization has happened incase this is called again.
 	static int initialized = 0;
 	if (initialized) return 0;
+    printf("init gicv2\n");
     volatile struct gic_dist_map *dist = dev->region_bases[0];
 
     uint32_t ctlr = dist->enable;
@@ -122,6 +123,7 @@ static int gic_v2_init(struct elfloader_device *dev,
 
 static const struct dtb_match_table gic_v2_matches[] = {
     { .compatible = "arm,cortex-a15-gic" },
+    { .compatible = "arm,gic-400" },
     { .compatible = NULL /* sentinel */ },
 };
 
