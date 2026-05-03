@@ -44,11 +44,13 @@ BEGIN_FUNC(_start)
 
     br      x2
 1:
-    /* Clear .bss section before calling main */
-    bl      clear_bss
     /* restore original arguments for next step */
     ldp     x0, x1, [sp], #16
 #endif
+    /* Clear .bss section before calling main (required for all image types) */
+    stp     x0, x1, [sp, #-16]!
+    bl      clear_bss
+    ldp     x0, x1, [sp], #16
     b       main
 END_FUNC(_start)
 

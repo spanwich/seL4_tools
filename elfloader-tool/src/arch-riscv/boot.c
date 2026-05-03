@@ -152,7 +152,7 @@ static void set_and_wait_for_ready(int hart_id, int core_id)
 
     /* Wait untill all cores are go */
     for (int i = 0; i < CONFIG_MAX_NUM_NODES; i++) {
-        while (__atomic_load_n(&core_ready[i], __ATOMIC_RELAXED) == 0) ;
+        while (__atomic_load_n(&core_ready[i], __ATOMIC_ACQUIRE) == 0) ;
     }
 }
 #endif
@@ -212,12 +212,11 @@ static int run_elfloader(UNUSED int hart_id, void *bootloader_dtb)
     /* Unleash secondary cores */
     __atomic_store_n(&secondary_go, 1, __ATOMIC_RELEASE);
 
-    /* Start all cores */
-    int i = 0;
-    while (i < CONFIG_MAX_NUM_NODES && hsm_exists) {
-        i++;
-        if (i != hart_id) {
-            sbi_hart_start(i, secondary_harts, i);
+    /* Start all other cores */
+    for (int i = 0; i < CONFIG_MAX_NUM_NODES && hsm_exists; ++i) {
+        int h = i + CONFIG_FIRST_HART_ID;
+        if (h != hart_id) {
+            sbi_hart_start(h, secondary_harts, h);
         }
     }
 
@@ -233,13 +232,9 @@ static int run_elfloader(UNUSED int hart_id, void *bootloader_dtb)
                                                   user_info.phys_virt_offset,
                                                   user_info.virt_entry,
                                                   (word_t)dtb,
-                                                  dtb_size
-#if CONFIG_MAX_NUM_NODES > 1
-                                                  ,
+                                                  dtb_size,
                                                   hart_id,
-                                                  0
-#endif
-                                                 );
+                                                  0);
 
     /* We should never get here. */
     printf("ERROR: Kernel returned back to the ELF Loader\n");
@@ -282,7 +277,7 @@ void main(int hart_id, void *bootloader_dtb)
     printf("ELF-loader started on (HART %d) (NODES %d)\n",
            hart_id, CONFIG_MAX_NUM_NODES);
 
-    printf("  paddr=[%p..%p]\n", _text, _end - 1);
+    printf("  paddr=[%p..%p]\n", _text, (uintptr_t)_end - 1);
 
     /* Run the actual ELF loader, this is not expected to return unless there
      * was an error.
