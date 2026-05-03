@@ -108,6 +108,10 @@ config_set(KernelMaxNumNodes2 MAX_NUM_NODES ${ElfLoaderNumNodes})
 add_config_library(elfloader "${configure_string}")
 
 add_compile_options(-D_XOPEN_SOURCE=700 -ffreestanding -Wall -Werror -Wextra)
+# Kent's multikernel design intentionally has elfloader's CONFIG_MAX_NUM_NODES (= number
+# of kernel nodes loaded) differ from each kernel's CONFIG_MAX_NUM_NODES (= 1, unicore).
+# The macro name collision triggers a -Werror redefinition. Downgrade just that warning.
+add_compile_options(-Wno-error=cpp)
 set(linkerScript "${CMAKE_CURRENT_LIST_DIR}/src/linker.lds")
 if(KernelArchRiscV)
     add_compile_options(-mcmodel=medany)
