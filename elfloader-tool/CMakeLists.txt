@@ -103,6 +103,16 @@ config_option(
     DEPENDS "NOT ElfloaderImageEFI"
 )
 
+config_option(
+    ElfloaderMultikernel MULTIKERNEL
+    "Multikernel-AMP mode: bundle two kernel + rootserver pairs and boot one per A35 core
+     via PSCI CPU_ON with per-kernel MMU trampolines. Each kernel must be built separately
+     at distinct KernelArmRamBase, then bundled here via MULTIKERNEL_K{0,1}_KERNEL_ELF /
+     MULTIKERNEL_K{0,1}_ROOTSERVER / MULTIKERNEL_K{0,1}_DTB cache vars."
+    DEFAULT OFF
+    DEPENDS "KernelArchARM AND KernelSel4ArchAarch64"
+)
+
 add_config_library(elfloader "${configure_string}")
 
 add_compile_options(-D_XOPEN_SOURCE=700 -ffreestanding -Wall -Werror -Wextra)
@@ -271,6 +281,43 @@ add_custom_command(
     DEPENDS "$<TARGET_PROPERTY:rootserver_image,ROOTSERVER_IMAGE>"
 )
 list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/rootserver")
+
+# Multikernel-AMP: bundle a second pre-built (kernel + rootserver + dtb) tuple
+# alongside the primary one. The primary kernel/rootserver are kernel_0;
+# the cache-var-supplied paths become kernel_1 in the CPIO.
+# The C-side (multikernel.c) loads kernel_1.elf and rootserver_1 by name.
+if(ElfloaderMultikernel)
+    if(NOT MULTIKERNEL_K1_KERNEL_ELF OR NOT EXISTS "${MULTIKERNEL_K1_KERNEL_ELF}")
+        message(FATAL_ERROR "MULTIKERNEL=ON but MULTIKERNEL_K1_KERNEL_ELF not set or missing: '${MULTIKERNEL_K1_KERNEL_ELF}'")
+    endif()
+    if(NOT MULTIKERNEL_K1_ROOTSERVER OR NOT EXISTS "${MULTIKERNEL_K1_ROOTSERVER}")
+        message(FATAL_ERROR "MULTIKERNEL=ON but MULTIKERNEL_K1_ROOTSERVER not set or missing: '${MULTIKERNEL_K1_ROOTSERVER}'")
+    endif()
+    add_custom_command(
+        OUTPUT "kernel_1.elf"
+        COMMAND ${CMAKE_STRIP} "${MULTIKERNEL_K1_KERNEL_ELF}" -o ${CMAKE_CURRENT_BINARY_DIR}/kernel_1.elf
+        VERBATIM
+        DEPENDS "${MULTIKERNEL_K1_KERNEL_ELF}"
+    )
+    list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel_1.elf")
+    add_custom_command(
+        OUTPUT "rootserver_1"
+        COMMAND ${CMAKE_STRIP} "${MULTIKERNEL_K1_ROOTSERVER}" -o ${CMAKE_CURRENT_BINARY_DIR}/rootserver_1
+        VERBATIM
+        DEPENDS "${MULTIKERNEL_K1_ROOTSERVER}"
+    )
+    list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/rootserver_1")
+    if(MULTIKERNEL_K1_DTB AND EXISTS "${MULTIKERNEL_K1_DTB}")
+        # Stage k1 dtb under a renamed file so MakeCPIO records it as kernel_1.dtb
+        add_custom_command(
+            OUTPUT "kernel_1.dtb"
+            COMMAND ${CMAKE_COMMAND} -E copy "${MULTIKERNEL_K1_DTB}" ${CMAKE_CURRENT_BINARY_DIR}/kernel_1.dtb
+            DEPENDS "${MULTIKERNEL_K1_DTB}"
+        )
+        list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel_1.dtb")
+    endif()
+endif()
+
 if(NOT ${ElfloaderHashInstructions} STREQUAL "hash_none")
     set(hash_command "")
     if(ElfloaderHashSHA)

@@ -158,6 +158,17 @@ sufficiently-large memory region.
             elif name.endswith('.bin'):
                 # Skip checksum entries.
                 notice('skipping checkum entry "{}"'.format(name))
+            elif name.startswith('kernel_') and name.endswith('.elf'):
+                # Multikernel-AMP secondary kernel ELF: account for its size in
+                # the same memory region. Treat as a "rootserver" for sizing
+                # since shoehorn just needs total memory consumed in this region.
+                # The actual placement is computed later by the elfloader.
+                rootservers.append(get_bytes(entry))
+            elif name.startswith('kernel_') and name.endswith('.dtb'):
+                # Multikernel-AMP secondary DTB: a binary blob, not ELF.
+                # Skip — its size is small and amounts of memory are accounted
+                # for via the kernel ELF's reported memory bounds.
+                notice('skipping multikernel secondary DTB entry "{}"'.format(name))
             else:
                 rootservers.append(get_bytes(entry))
 

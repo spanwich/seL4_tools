@@ -174,7 +174,7 @@ static int unpack_elf_to_paddr(
  * Returns in 'next_phys_addr' the byte past the last byte of the physical
  * address used.
  */
-static int load_elf(
+int load_elf(
     void const *cpio,
     size_t cpio_len,
     const char *name,
