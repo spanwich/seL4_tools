@@ -208,6 +208,29 @@ void continue_boot(int was_relocated)
     smp_boot();
 #endif /* CONFIG_MAX_NUM_NODES */
 
+#ifdef CONFIG_MULTIKERNEL
+    /* Multikernel-AMP: load kernel_1 + rootserver_1 + kernel_1.dtb at their
+     * declared physical addresses, populate multikernel_entries[1], and
+     * PSCI CPU_ON core 1 with multikernel_secondary_startup as entry.
+     *
+     * Done BEFORE the boot core enables its MMU so the secondary's call to
+     * arm_enable_hyp_mmu sees a fully-set-up _boot_pgd_down (init_hyp_boot_vspace
+     * for kernel_0 was called above; its 256-slot PMD fill happens to cover
+     * kernel_1's high-half too, since both kernels share the same PUD slot). */
+    {
+        extern int multikernel_load_all(void);
+        extern int multikernel_dispatch_secondaries(void);
+        if (multikernel_load_all() != 0) {
+            printf("ERROR: multikernel_load_all() failed\n");
+            abort();
+        }
+        if (multikernel_dispatch_secondaries() != 0) {
+            printf("ERROR: multikernel_dispatch_secondaries() failed\n");
+            abort();
+        }
+    }
+#endif
+
     if (is_hyp_mode()) {
         printf("Enabling hypervisor MMU and paging\n");
         arm_enable_hyp_mmu();
