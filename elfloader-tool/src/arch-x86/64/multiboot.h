@@ -20,6 +20,13 @@
 #define MULTIBOOT_INFO_MODS          0x00000008
 #define MULTIBOOT_INFO_MEM_MAP       0x00000040
 
+struct mb_mmap_entry {
+    uint32_t size;        /* size of this entry MINUS the size field (= 20) */
+    uint64_t base_addr;
+    uint64_t length;
+    uint32_t type;        /* 1 = usable RAM, 2 = reserved, 3 = ACPI, 4 = NVS */
+} __attribute__((packed));
+
 struct mb_module {
     uint32_t mod_start;
     uint32_t mod_end;

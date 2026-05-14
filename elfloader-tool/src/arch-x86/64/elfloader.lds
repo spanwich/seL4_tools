@@ -29,11 +29,14 @@ SECTIONS
         KEEP(*(.multiboot))
     }
 
-    /* All code (32-bit protected mode). */
+    /* All code (32-bit protected mode). The .ap_trampoline section holds
+     * the SIPI trampoline that the BSP copies to phys 0x8000 at runtime.
+     * It must be readable by the BSP, so it lands in the load segment. */
     .text : ALIGN(16)
     {
         *(.text)
         *(.text.*)
+        *(.ap_trampoline)
     }
 
     .rodata : ALIGN(16)
