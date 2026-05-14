@@ -8,8 +8,89 @@ cmake_minimum_required(VERSION 3.16.0)
 
 project(elfloader C ASM)
 
+# x86_64 multikernel-AMP path. The upstream elfloader targets Arm/RISC-V only;
+# this branch implements a minimal Multiboot-v1-bootable bootloader for
+# qemu-system-x86_64 (sub-step 1: print on COM1 and halt; later sub-steps add
+# CPIO/ELF loading and the K0/K1 jumps). Keeps the ARM pipeline below
+# completely untouched.
+if(KernelArchX86 AND KernelSel4ArchX86_64)
+    if(NOT KERNEL_FLAGS_PATH)
+        message(FATAL_ERROR "KERNEL_FLAGS_PATH is not set.")
+    endif()
+    include(${KERNEL_FLAGS_PATH})
+
+    set(configure_string "")
+    add_config_library(elfloader "${configure_string}")
+
+    file(
+        GLOB x86_64_files
+            src/arch-x86/64/*.c
+            src/arch-x86/64/*.S
+    )
+
+    add_executable(elfloader EXCLUDE_FROM_ALL ${x86_64_files})
+
+    target_include_directories(elfloader
+        PRIVATE
+            "include"
+            "include/arch-x86"
+            "include/arch-x86/64"
+            "${CMAKE_CURRENT_BINARY_DIR}/gen_headers"
+    )
+
+    # No libgcc — we're 32-bit freestanding and the host system only ships
+    # 64-bit libgcc. Our code uses no compiler intrinsics that would need it.
+    target_link_libraries(elfloader PRIVATE elfloader_Config sel4_autoconf)
+
+    # IMAGE_START_ADDR — load address of the elfloader binary. 1 MiB is the
+    # conventional Multiboot landing pad and lies safely below K0 (0x10000000).
+    if(NOT IMAGE_START_ADDR)
+        set(IMAGE_START_ADDR "0x100000")
+    endif()
+    set(IMAGE_START_ADDR_H "${CMAKE_CURRENT_BINARY_DIR}/gen_headers/image_start_addr.h")
+    file(GENERATE OUTPUT ${IMAGE_START_ADDR_H} CONTENT "
+#pragma once
+#define IMAGE_START_ADDR ${IMAGE_START_ADDR}
+")
+
+    # Preprocess linker script with the C preprocessor.
+    set(linkerScript "${CMAKE_CURRENT_LIST_DIR}/src/arch-x86/64/elfloader.lds")
+    separate_arguments(c_arguments NATIVE_COMMAND "${CMAKE_C_FLAGS}")
+    add_custom_command(
+        OUTPUT "linker.lds_pp"
+        COMMAND
+            ${CMAKE_C_COMPILER} ${c_arguments}
+            "-I${CMAKE_CURRENT_BINARY_DIR}/gen_headers"
+            -P -E -o linker.lds_pp -x c ${linkerScript}
+        DEPENDS ${linkerScript}
+        VERBATIM
+    )
+    add_custom_target(elfloader_linker DEPENDS linker.lds_pp)
+    add_dependencies(elfloader elfloader_linker)
+
+    # Compile + link flags for a freestanding 32-bit Multiboot binary.
+    # QEMU's Multiboot v1 loader only accepts ELF32 — and the seL4 x86_64
+    # kernel's entry (`head.S:269`) is itself 32-bit and transitions to long
+    # mode internally — so the elfloader stays pure 32-bit throughout.
+    # `-Wa,--32` overrides the inherited `-Wa,--64` from the kernel's global
+    # ASM flags (last `-Wa,--XX` wins for GAS).
+    target_compile_options(elfloader PRIVATE
+        -m32 -Wa,--32 -ffreestanding -fno-builtin -fno-stack-protector
+        -fno-pic -fno-pie -fno-common
+        -mno-sse -mno-mmx -mno-sse2 -mno-3dnow
+        -Wall -Wextra
+    )
+    # `-Wl,-m,elf_i386` overrides the inherited `-Wl,-m,elf_x86_64` from the
+    # kernel's global flags — last `-m,...` wins for ld.
+    set_property(TARGET elfloader APPEND_STRING PROPERTY LINK_FLAGS
+        " -m32 -Wl,-m,elf_i386 -Wl,-T ${CMAKE_CURRENT_BINARY_DIR}/linker.lds_pp -nostdlib -nodefaultlibs -static -no-pie -Wl,--build-id=none"
+    )
+
+    return()
+endif()
+
 if(KernelArchX86)
-    # This project is only used on Arm or RISC-V
+    # This project is only used on Arm or RISC-V (32-bit x86 remains unsupported)
     return()
 endif()
 
