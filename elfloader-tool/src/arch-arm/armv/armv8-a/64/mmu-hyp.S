@@ -5,6 +5,7 @@
  */
 
 #include <autoconf.h>
+#include <elfloader/gen_config.h>
 #include <assembler.h>
 #include <armv/assembler.h>
 
@@ -34,14 +35,19 @@
 .extern bf2_saved_dtb
 .extern bf2_saved_dtb_size
 
-.macro secondary_marker ch
-    movz    x15, #0x400e, lsl #16
-    mov     w14, #\ch
-.Lsecondary_marker_wait\@:
-    ldr     w13, [x15, #0x1c]
-    tbz     w13, #7, .Lsecondary_marker_wait\@
-    str     w14, [x15, #0x28]
+#ifdef CONFIG_MULTIKERNEL
+.extern mk_trace_record_phys
+.extern mk_trace_step_delay
+.macro mk_trace tag
+    mov     x0, #\tag
+    bl      mk_trace_record_phys
+    bl      mk_trace_step_delay
 .endm
+#else
+.macro mk_trace tag
+.endm
+#endif
+
 
 BEGIN_FUNC(disable_caches_hyp)
     stp     x29, x30, [sp, #-16]!
@@ -257,19 +263,19 @@ END_FUNC(arm_enable_hyp_mmu)
 BEGIN_FUNC(arm_enable_hyp_mmu_secondary)
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
-    secondary_marker 0x30        /* 0: helper entered, stack frame installed */
+    mk_trace 20
 
     dsb     sy
     isb
-    secondary_marker 0x31        /* 1: initial ordering complete */
+    mk_trace 21
 
     disable_mmu sctlr_el2, x8
-    secondary_marker 0x32        /* 2: SCTLR_EL2 MMU/cache disable sequence complete */
+    mk_trace 22
 
     /* Prepared secondary: avoid global ic iallu before MMU enable. */
     dsb     sy
     isb
-    secondary_marker 0x33        /* 3: pre-MMU no-global-icache barrier complete */
+    mk_trace 23
 
     ldr     x5, =MAIR(0x00, MT_DEVICE_nGnRnE) | \
                  MAIR(0x04, MT_DEVICE_nGnRE) | \
@@ -281,32 +287,31 @@ BEGIN_FUNC(arm_enable_hyp_mmu_secondary)
     ldr     x8, =TCR_T0SZ(48) | TCR_IRGN0_WBWC | TCR_ORGN0_WBWC | TCR_SH0_ISH | TCR_TG0_4K | TCR_PS | TCR_EL2_RES1
     msr     tcr_el2, x8
     isb
-    secondary_marker 0x34        /* 4: MAIR_EL2/TCR_EL2 programmed */
+    mk_trace 24
 
     adrp    x8, _boot_pgd_down
     msr     ttbr0_el2, x8
     isb
-    secondary_marker 0x35        /* 5: TTBR0_EL2 programmed */
+    mk_trace 25
 
     tlbi    alle2is
     dsb     ish
     isb
-    secondary_marker 0x36        /* 6: first EL2 TLB invalidate complete */
+    mk_trace 26
 
     enable_mmu  sctlr_el2, x8
-    secondary_marker 0x37        /* 7: SCTLR_EL2 MMU/cache enable sequence complete */
+    mk_trace 27
 
     /* Prepared secondary: avoid global ic ialluis after MMU enable. */
     dsb     ish
     isb
-    secondary_marker 0x38        /* 8: post-MMU no-global-icache barrier complete */
+    mk_trace 28
 
     tlbi    alle2is
     dsb     ish
     isb
-    secondary_marker 0x39        /* 9: second EL2 TLB invalidate complete */
+    mk_trace 29
 
     ldp     x29, x30, [sp], #16
-    secondary_marker 0x52        /* R: returning to trampoline */
     ret
 END_FUNC(arm_enable_hyp_mmu_secondary)

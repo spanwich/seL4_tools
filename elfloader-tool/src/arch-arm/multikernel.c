@@ -32,13 +32,38 @@
 #define BF2_MK_SHARED_POOL_SIZE  0x1000ull
 #define BF2_MK_RING_MAGIC        0x4d4b4c47u /* "MKLG" */
 
+#define MK_TRACE_BUFFER_VADDR 0x41f000ull
+#define MK_TRACE_BUFFER_SIZE  0x1000ull
+#define MK_TRACE_RECORD_SIZE  0x80ull
+#define MK_TRACE_MAX_RECORDS  32ull
+#define MK_TRACE_K1_TRAMP_ENTRY      10ull
+#define MK_TRACE_K1_ENTRY_DELAY_PRE  11ull
+#define MK_TRACE_K1_ENTRY_DELAY_POST 12ull
+#define MK_TRACE_K1_BEFORE_BRANCH    30ull
+
+#ifndef MK_SECONDARY_ENTRY_DELAY_TICKS
+#define MK_SECONDARY_ENTRY_DELAY_TICKS 100000ull
+#endif
+
+#ifndef MK_SECONDARY_STEP_DELAY_TICKS
+#define MK_SECONDARY_STEP_DELAY_TICKS 0ull
+#endif
+
 ALIGN(16) char mk_secondary_stack[MULTIKERNEL_MAX_KERNELS][4096];
 
 unsigned int multikernel_count = MULTIKERNEL_COUNT;
 struct multikernel_entry multikernel_entries[MULTIKERNEL_MAX_KERNELS];
+uint64_t mk_trace_buffer_paddr = 0;
+uint64_t mk_secondary_entry_delay_ticks = MK_SECONDARY_ENTRY_DELAY_TICKS;
+uint64_t mk_secondary_step_delay_ticks = MK_SECONDARY_STEP_DELAY_TICKS;
 
 #ifndef CONFIG_PLAT_MLXBF2
 extern void multikernel_secondary_park(void);
+
+extern void mk_trace_record_phys(void);
+extern void mk_trace_delay_ticks(void);
+extern void mk_trace_step_delay(void);
+
 __asm__(
     ".section .text\n"
     ".align 12\n"
@@ -97,21 +122,8 @@ __asm__(
 
 /*
  * Stage 2b: real K1 bring-up trampoline (STM32MP25, hypervisor/EL2 build).
- * Core 1 is PSCI-CPU_ON'd here by the booted-K0 rootserver. We reuse the
- * elfloader's PROVEN hyp MMU setup: arm_enable_hyp_mmu loads _boot_pgd_down
- * into TTBR0_EL2, whose high-half (built for K0) already maps K1's virtual
- * entry 0x8098000000 -> 0x98000000 (K0/K1 share pv_offset 0x8000000000 and
- * K1's phys lies inside K0's mapped 1 GiB). Then we load K1's init_kernel ABI
- * args from multikernel_entries[1] and branch to its virtual entry.
- *
- * Requires the elfloader region (this code, _boot_pgd_down, mk_secondary_stack,
- * multikernel_entries) to survive K0's boot — the minimal K0 rootserver does
- * not reclaim it; if a future K0 does, reserve [elfloader_start..end] from K0.
- *
- * NB struct multikernel_entry layout (8B fields): ttbr0(0) kentry(8)
- * x0/user_phys_start(16) x1/user_phys_end(24) x2/pv_offset(32)
- * x3/user_virt_entry(40) x4/dtb_paddr(48) x5/dtb_size(56) — the seL4 init_kernel
- * ABI (head.S:127-134).
+ * Normal-path diagnostics are memory trace records only; UART is kept solely
+ * for the EL2 exception handler below.
  */
 extern void arm_enable_hyp_mmu_secondary(void);
 __asm__(
@@ -122,51 +134,43 @@ __asm__(
     "mk_core1_trampoline:\n"
     "    msr  daifset, #0xf\n"
     "    isb\n"
-    /* DEBUG (MMU off, raw USART2): print "K1:EL<n> A\n" so we see core 1's EL
-     * and that it reached here, BEFORE touching any EL2 register. x15=UART base,
-     * w14=char, x13=tmp; mk_tramp_putc is a leaf (no stack) so this is safe with
-     * sp not yet set. */
-    "    movz x15, #0x400e, lsl #16\n"
-    "    mov  w14, #0x4b\n    bl mk_tramp_putc\n"   /* 'K' */
-    "    mov  w14, #0x31\n    bl mk_tramp_putc\n"   /* '1' */
-    "    mov  w14, #0x3a\n    bl mk_tramp_putc\n"   /* ':' */
-    "    mrs  x14, CurrentEL\n    lsr x14, x14, #2\n    add w14, w14, #0x30\n"
-    "    bl mk_tramp_putc\n"                        /* EL digit (2=EL2,1=EL1) */
-    "    mov  w14, #0x41\n    bl mk_tramp_putc\n"   /* 'A' = before MMU enable */
-    "    mov  w14, #0x0a\n    bl mk_tramp_putc\n"
-    /* Point VBAR_EL2 at our DDR handler so an exception in the MMU enable is
-     * reported (ESR/ELR/FAR) instead of vectoring into BL31's secure table. */
     "    adrp x16, mk_core1_vbar\n"
     "    add  x16, x16, :lo12:mk_core1_vbar\n"
     "    msr  vbar_el2, x16\n"
     "    isb\n"
-    /* scratch stack = top of mk_secondary_stack[1] (the MMU helper needs sp) */
     "    adrp x10, mk_secondary_stack\n"
     "    add  x10, x10, :lo12:mk_secondary_stack\n"
-    "    add  x10, x10, #0x2000\n"            /* slot 1 base (0x1000) + top (0x1000) */
+    "    add  x10, x10, #0x2000\n"
     "    mov  sp, x10\n"
-    "    bl   arm_enable_hyp_mmu_secondary\n" /* TTBR0_EL2=_boot_pgd_down; MMU on; no global cache ops */
-    /* DEBUG: print 'B\n' = MMU enable returned (UART is device, works post-MMU) */
-    "    movz x15, #0x400e, lsl #16\n"
-    "    mov  w14, #0x42\n    bl mk_tramp_putc\n"   /* 'B' */
-    "    mov  w14, #0x0a\n    bl mk_tramp_putc\n"
+    "    mov  x0, #10\n"
+    "    bl   mk_trace_record_phys\n"
+    "    mov  x0, #11\n"
+    "    bl   mk_trace_record_phys\n"
+    "    adrp x9, mk_secondary_entry_delay_ticks\n"
+    "    add  x9, x9, :lo12:mk_secondary_entry_delay_ticks\n"
+    "    ldr  x0, [x9]\n"
+    "    bl   mk_trace_delay_ticks\n"
+    "    mov  x0, #12\n"
+    "    bl   mk_trace_record_phys\n"
+    "    bl   arm_enable_hyp_mmu_secondary\n"
+    "    mov  x0, #30\n"
+    "    bl   mk_trace_record_phys\n"
     "    adrp x9, multikernel_entries\n"
     "    add  x9, x9, :lo12:multikernel_entries\n"
-    "    add  x9, x9, #0x40\n"                /* multikernel_entries[1] (sizeof 64) */
-    "    ldr  x12, [x9, #8]\n"                /* kernel_entry_vaddr (0x8098000000) */
-    "    ldr  x0,  [x9, #16]\n"               /* user image phys start */
-    "    ldr  x1,  [x9, #24]\n"               /* user image phys end */
-    "    ldr  x2,  [x9, #32]\n"               /* phys/virt offset */
-    "    ldr  x3,  [x9, #40]\n"               /* user virt entry */
-    "    ldr  x4,  [x9, #48]\n"               /* dtb phys */
-    "    ldr  x5,  [x9, #56]\n"               /* dtb size */
+    "    add  x9, x9, #0x40\n"
+    "    ldr  x12, [x9, #8]\n"
+    "    ldr  x0,  [x9, #16]\n"
+    "    ldr  x1,  [x9, #24]\n"
+    "    ldr  x2,  [x9, #32]\n"
+    "    ldr  x3,  [x9, #40]\n"
+    "    ldr  x4,  [x9, #48]\n"
+    "    ldr  x5,  [x9, #56]\n"
     "    br   x12\n"
-    "mk_tramp_putc:\n"                         /* w14=char, x15=USART2 base; leaf */
-    "    ldr  w13, [x15, #0x1c]\n"             /* USART_ISR */
-    "    tbz  w13, #7, mk_tramp_putc\n"        /* wait TXE */
-    "    str  w14, [x15, #0x28]\n"             /* USART_TDR */
+    "mk_tramp_putc:\n"
+    "    ldr  w13, [x15, #0x1c]\n"
+    "    tbz  w13, #7, mk_tramp_putc\n"
+    "    str  w14, [x15, #0x28]\n"
     "    ret\n"
-    /* print x12 as 16 hex digits; x15=UART; clobbers x10,x11,x13,x14; leaf */
     "mk_tramp_puthex:\n"
     "    mov  x11, #60\n"
     "1:  lsr  x10, x12, x11\n    and x10, x10, #0xf\n    cmp x10, #10\n"
@@ -174,19 +178,17 @@ __asm__(
     "2:  add  w14, w10, #0x30\n"
     "3:  ldr  w13, [x15, #0x1c]\n    tbz w13, #7, 3b\n    str w14, [x15, #0x28]\n"
     "    subs x11, x11, #4\n    b.ge 1b\n    ret\n"
-    /* EL2 exception handler: print 'X E=<esr> L=<elr> F=<far>' then park. */
     "mk_core1_exc:\n"
     "    movz x15, #0x400e, lsl #16\n"
-    "    mov  w14, #0x58\n bl mk_tramp_putc\n"   /* 'X' */
-    "    mov  w14, #0x20\n bl mk_tramp_putc\n    mov w14, #0x45\n bl mk_tramp_putc\n mov w14, #0x3d\n bl mk_tramp_putc\n" /* ' E=' */
+    "    mov  w14, #0x58\n bl mk_tramp_putc\n"
+    "    mov  w14, #0x20\n bl mk_tramp_putc\n    mov w14, #0x45\n bl mk_tramp_putc\n mov w14, #0x3d\n bl mk_tramp_putc\n"
     "    mrs  x12, esr_el2\n bl mk_tramp_puthex\n"
-    "    mov  w14, #0x20\n bl mk_tramp_putc\n    mov w14, #0x4c\n bl mk_tramp_putc\n mov w14, #0x3d\n bl mk_tramp_putc\n" /* ' L=' */
+    "    mov  w14, #0x20\n bl mk_tramp_putc\n    mov w14, #0x4c\n bl mk_tramp_putc\n mov w14, #0x3d\n bl mk_tramp_putc\n"
     "    mrs  x12, elr_el2\n bl mk_tramp_puthex\n"
-    "    mov  w14, #0x20\n bl mk_tramp_putc\n    mov w14, #0x46\n bl mk_tramp_putc\n mov w14, #0x3d\n bl mk_tramp_putc\n" /* ' F=' */
+    "    mov  w14, #0x20\n bl mk_tramp_putc\n    mov w14, #0x46\n bl mk_tramp_putc\n mov w14, #0x3d\n bl mk_tramp_putc\n"
     "    mrs  x12, far_el2\n bl mk_tramp_puthex\n"
     "    mov  w14, #0x0a\n bl mk_tramp_putc\n"
     "4:  wfe\n    b 4b\n"
-    /* EL2 vector table (16 x 0x80), all entries branch to the handler. */
     "    .balign 0x800\n"
     "    .global mk_core1_vbar\n"
     "mk_core1_vbar:\n"
@@ -194,6 +196,71 @@ __asm__(
     ".size mk_core1_trampoline, . - mk_core1_trampoline\n"
 );
 #endif
+
+__asm__(
+    ".section .text\n"
+    ".align 4\n"
+    ".global mk_trace_record_phys\n"
+    ".type mk_trace_record_phys, %function\n"
+    "mk_trace_record_phys:\n"
+    "    adrp x9, mk_trace_buffer_paddr\n"
+    "    add  x9, x9, :lo12:mk_trace_buffer_paddr\n"
+    "    ldr  x10, [x9]\n"
+    "    cbz  x10, 9f\n"
+    "    cmp  x0, #32\n"
+    "    b.hs 9f\n"
+    "    lsl  x11, x0, #7\n"
+    "    add  x10, x10, x11\n"
+    "    str  x0, [x10, #0]\n"
+    "    str  x0, [x10, #8]\n"
+    "    mrs  x12, cntvct_el0\n"
+    "    str  x12, [x10, #16]\n"
+    "    mrs  x12, cntfrq_el0\n"
+    "    str  x12, [x10, #24]\n"
+    "    mrs  x12, mpidr_el1\n"
+    "    str  x12, [x10, #32]\n"
+    "    mrs  x12, CurrentEL\n"
+    "    str  x12, [x10, #40]\n"
+    "    mrs  x12, sctlr_el2\n"
+    "    str  x12, [x10, #48]\n"
+    "    mrs  x12, hcr_el2\n"
+    "    str  x12, [x10, #56]\n"
+    "    mrs  x12, ttbr0_el2\n"
+    "    str  x12, [x10, #64]\n"
+    "    mrs  x12, tcr_el2\n"
+    "    str  x12, [x10, #72]\n"
+    "    mrs  x12, mair_el2\n"
+    "    str  x12, [x10, #80]\n"
+    "    mrs  x12, esr_el2\n"
+    "    str  x12, [x10, #88]\n"
+    "    mrs  x12, far_el2\n"
+    "    str  x12, [x10, #96]\n"
+    "    mrs  x12, elr_el2\n"
+    "    str  x12, [x10, #104]\n"
+    "    mov  x12, sp\n"
+    "    str  x12, [x10, #112]\n"
+    "    str  xzr, [x10, #120]\n"
+    "    dsb  sy\n"
+    "9:  ret\n"
+    ".global mk_trace_delay_ticks\n"
+    ".type mk_trace_delay_ticks, %function\n"
+    "mk_trace_delay_ticks:\n"
+    "    cbz  x0, 2f\n"
+    "    mrs  x9, cntvct_el0\n"
+    "1:  mrs  x10, cntvct_el0\n"
+    "    sub  x11, x10, x9\n"
+    "    cmp  x11, x0\n"
+    "    b.lo 1b\n"
+    "2:  ret\n"
+    ".global mk_trace_step_delay\n"
+    ".type mk_trace_step_delay, %function\n"
+    "mk_trace_step_delay:\n"
+    "    adrp x9, mk_secondary_step_delay_ticks\n"
+    "    add  x9, x9, :lo12:mk_secondary_step_delay_ticks\n"
+    "    ldr  x0, [x9]\n"
+    "    b    mk_trace_delay_ticks\n"
+);
+
 
 static const unsigned long bf2_mpidr[MULTIKERNEL_MAX_KERNELS] = {
     0x0, 0x1, 0x100, 0x101, 0x200, 0x201, 0x300, 0x301
@@ -267,6 +334,35 @@ static void mk_init_shared_pool(void)
                    (uintptr_t)(BF2_MK_SHARED_POOL_PADDR + BF2_MK_SHARED_POOL_SIZE));
     printf("multikernel: shared dataport initialized at %p\n",
            (void *)(uintptr_t)BF2_MK_SHARED_POOL_PADDR);
+#endif
+}
+
+
+static void mk_init_trace_buffer(void)
+{
+#ifndef CONFIG_PLAT_MLXBF2
+    if (MK_TRACE_BUFFER_VADDR < user_info.virt_region_start ||
+        (MK_TRACE_BUFFER_VADDR + MK_TRACE_BUFFER_SIZE) > user_info.virt_region_end) {
+        printf("multikernel: trace vaddr %p outside K0 rootserver [%p..%p)\n",
+               (void *)(uintptr_t)MK_TRACE_BUFFER_VADDR,
+               user_info.virt_region_start,
+               user_info.virt_region_end);
+        mk_trace_buffer_paddr = 0;
+    } else {
+        mk_trace_buffer_paddr = user_info.phys_region_start +
+                                (MK_TRACE_BUFFER_VADDR - user_info.virt_region_start);
+        printf("multikernel: trace buffer vaddr=%p paddr=%p entry_delay=%llu step_delay=%llu\n",
+               (void *)(uintptr_t)MK_TRACE_BUFFER_VADDR,
+               (void *)(uintptr_t)mk_trace_buffer_paddr,
+               (unsigned long long)mk_secondary_entry_delay_ticks,
+               (unsigned long long)mk_secondary_step_delay_ticks);
+    }
+    mk_clean_range((uintptr_t)&mk_trace_buffer_paddr,
+                   (uintptr_t)(&mk_trace_buffer_paddr + 1));
+    mk_clean_range((uintptr_t)&mk_secondary_entry_delay_ticks,
+                   (uintptr_t)(&mk_secondary_entry_delay_ticks + 1));
+    mk_clean_range((uintptr_t)&mk_secondary_step_delay_ticks,
+                   (uintptr_t)(&mk_secondary_step_delay_ticks + 1));
 #endif
 }
 
@@ -397,6 +493,7 @@ int multikernel_load_all(void)
 
     printf("multikernel: loading %u-kernel BF2 bundle\n", multikernel_count);
     mk_init_shared_pool();
+    mk_init_trace_buffer();
     for (unsigned int idx = 1; idx < multikernel_count; idx++) {
         if (load_secondary(idx, cpio, cpio_len) != 0) {
             return -1;
