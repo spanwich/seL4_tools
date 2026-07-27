@@ -6,7 +6,7 @@
 
 #include <autoconf.h>
 #include <elfloader/gen_config.h>
-#ifdef CONFIG_IMAGE_BINARY
+#if defined(CONFIG_IMAGE_BINARY) || defined(CONFIG_IMAGE_BOOTI)
 #include <image_start_addr.h>
 #endif
 
@@ -16,6 +16,28 @@
 .extern main
 
 .section ".text.start"
+
+#ifdef CONFIG_IMAGE_BOOTI
+/*
+ * ARM64 Image header for U-Boot 'booti' command.
+ * This 64-byte header must be at the start of the binary.
+ * See Linux Documentation/arm64/booting.rst.
+ *
+ * The linker places .text.start at IMAGE_START_ADDR, so the header
+ * occupies IMAGE_START_ADDR..+63 and _start begins at IMAGE_START_ADDR+64.
+ */
+    b       _start              /* code0: branch past header to entry   */
+    .long   0                   /* code1: reserved                      */
+    .quad   0                   /* text_offset: 0 (position independent)*/
+    .quad   _image_size         /* image_size: full footprint incl. BSS */
+    .quad   0xa                 /* flags: LE, 4K pages, any load addr   */
+    .quad   0                   /* res2                                 */
+    .quad   0                   /* res3                                 */
+    .quad   0                   /* res4                                 */
+    .ascii  "ARM\x64"           /* magic: 0x644d5241                    */
+    .long   0                   /* res5: PE/COFF offset (not EFI)       */
+#endif
+
 BEGIN_FUNC(_start)
     /* Make sure interrupts are disabled */
     msr daifset, #DAIFSET_MASK
@@ -23,14 +45,21 @@ BEGIN_FUNC(_start)
     adrp    x19, core_stack_alloc
     add     x19, x19, #0xff0
     mov     sp, x19
-#ifdef CONFIG_IMAGE_BINARY
+#if defined(CONFIG_IMAGE_BINARY) || defined(CONFIG_IMAGE_BOOTI)
     /* Store our original arguments before calling subroutines */
     stp     x0, x1, [sp, #-16]!
     /*
-     * Binary images may not be loaded in the correct location.
+     * Binary/booti images may not be loaded in the correct location.
      * Try and move ourselves so we're in the right place.
      */
+#ifdef CONFIG_IMAGE_BOOTI
+    /* For booti, the 64-byte ARM64 Image header precedes _start in
+     * .text.start. The linker places .text.start at IMAGE_START_ADDR,
+     * so _start is linked at IMAGE_START_ADDR + 64. */
+    ldr     x0, =(IMAGE_START_ADDR + 64)
+#else
     ldr     x0, =IMAGE_START_ADDR
+#endif
     adrp    x1, _start
     add     x1, x1, #:lo12:_start
     adrp    x2, _end
@@ -47,9 +76,17 @@ BEGIN_FUNC(_start)
 
     br      x2
 1:
-    /* Clear .bss section before calling main */
-    bl      clear_bss
     /* restore original arguments for next step */
+    ldp     x0, x1, [sp], #16
+#endif
+#ifndef CONFIG_IMAGE_EFI
+    /* Clear .bss section before calling main.
+     * BSS is not included in the binary payload (objcopy -O binary strips
+     * NOBITS sections), so it must be zeroed explicitly. This matches the
+     * AArch32 crt0.S behaviour which clears BSS for all non-EFI image types.
+     */
+    stp     x0, x1, [sp, #-16]!
+    bl      clear_bss
     ldp     x0, x1, [sp], #16
 #endif
     b       main
@@ -70,6 +107,7 @@ END_FUNC(finish_relocation)
 BEGIN_FUNC(secondary_startup)
     /* Make sure interrupts are disabled */
     msr daifset, #DAIFSET_MASK
+
     /*
      * secondary_data is a struct that looks like this:
      * 0x0 void *entry
