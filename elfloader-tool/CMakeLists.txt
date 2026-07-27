@@ -30,6 +30,7 @@ config_choice(
     "binary;ElfloaderImageBinary;IMAGE_BINARY;KernelArchARM OR KernelArchRiscV"
     "efi;ElfloaderImageEFI;IMAGE_EFI;KernelArchARM"
     "uimage;ElfloaderImageUimage;IMAGE_UIMAGE;KernelArchARM OR KernelArchRiscV"
+    "booti;ElfloaderImageBooti;IMAGE_BOOTI;KernelSel4ArchAarch64"
 )
 
 config_choice(

@@ -171,7 +171,7 @@ function(DeclareRootserver rootservername)
             # Seems the Elfloader CMake project was not included?
             message(FATAL_ERROR "ElfloaderImage is not set.")
         endif()
-        set(binary_efi_list "binary;efi")
+        set(binary_efi_list "binary;efi;booti")
         if(${ElfloaderImage} IN_LIST binary_efi_list)
             # If not an elf we construct an intermediate rule to do an objcopy to binary
             add_custom_command(

@@ -59,4 +59,5 @@ SECTIONS
         _bss_end = .;
     }
      _end = .;
+    _image_size = _end - _text;
 }
