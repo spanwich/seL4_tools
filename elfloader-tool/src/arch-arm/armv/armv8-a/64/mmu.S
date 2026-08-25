@@ -38,6 +38,30 @@ BEGIN_FUNC(flush_dcache)
     ret
 END_FUNC(flush_dcache)
 
+/* Clean [x0, x1) by VA to the point of coherency. Used by the
+ * multikernel loader before secondary CPU dispatch.
+ */
+BEGIN_FUNC(elfloader_dcache_clean_range)
+    cmp     x0, x1
+    b.hs    2f
+
+    mrs     x2, ctr_el0
+    ubfx    x2, x2, #16, #4
+    mov     x3, #4
+    lsl     x2, x3, x2
+    sub     x3, x2, #1
+    bic     x0, x0, x3
+1:
+    dc      cvac, x0
+    add     x0, x0, x2
+    cmp     x0, x1
+    b.lo    1b
+2:
+    dsb     sy
+    isb
+    ret
+END_FUNC(elfloader_dcache_clean_range)
+
 BEGIN_FUNC(arm_enable_mmu)
     /* We call nested functions, follow the ABI. */
     stp     x29, x30, [sp, #-16]!
