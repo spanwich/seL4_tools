@@ -97,6 +97,21 @@ int load_images(
     void const **chosen_dtb,
     size_t *chosen_dtb_size);
 
+/* Load a single named ELF blob from the CPIO archive at the physical address
+ * the ELF declares. Used by multikernel.c to load kernel_1.elf and
+ * rootserver_1 alongside the primary kernel/rootserver. */
+int load_elf(
+    void const *cpio,
+    size_t cpio_len,
+    const char *name,
+    void const *elf_blob,
+    size_t elf_blob_size,
+    char const *elf_hash_filename,
+    paddr_t dest_paddr,
+    int keep_headers,
+    struct image_info *info,
+    paddr_t *next_phys_addr);
+
 /* Platform functions */
 void platform_init(void);
 void init_cpus(void);
