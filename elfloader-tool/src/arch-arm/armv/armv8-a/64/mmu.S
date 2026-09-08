@@ -22,7 +22,18 @@
 .extern arm_vector_table
 
 BEGIN_FUNC(invalidate_dcache)
+#ifdef CONFIG_PLAT_MLXBF2
+    /*
+     * BlueField-2 UEFI may enter the EFI image with set/way cache maintenance
+     * trapped by firmware. Avoid dc isw/cisw before seL4 owns the exception
+     * level; the normal barriers below are enough for this live-boot smoke
+     * path and prevent an immediate UEFI synchronous exception.
+     */
+    dsb     sy
+    isb
+#else
     dcache  isw
+#endif
     ret
 END_FUNC(invalidate_dcache)
 
@@ -34,9 +45,65 @@ BEGIN_FUNC(invalidate_icache)
 END_FUNC(invalidate_icache)
 
 BEGIN_FUNC(flush_dcache)
+#ifdef CONFIG_PLAT_MLXBF2
+    dsb     sy
+    isb
+#else
     dcache  cisw
+#endif
     ret
 END_FUNC(flush_dcache)
+
+/* Clean [x0, x1) by VA to the point of coherency. Used by the
+ * multikernel loader before secondary CPU dispatch.
+ */
+BEGIN_FUNC(elfloader_dcache_clean_range)
+    cmp     x0, x1
+    b.hs    2f
+
+    mrs     x2, ctr_el0
+    ubfx    x2, x2, #16, #4
+    mov     x3, #4
+    lsl     x2, x3, x2
+    sub     x3, x2, #1
+    bic     x0, x0, x3
+1:
+    dc      cvac, x0
+    add     x0, x0, x2
+    cmp     x0, x1
+    b.lo    1b
+2:
+    dsb     sy
+    isb
+    ret
+END_FUNC(elfloader_dcache_clean_range)
+
+#ifdef CONFIG_PLAT_MLXBF2
+/* Clean [x0, x1) by VA to the point of coherency without using set/way
+ * maintenance. BF2 UEFI boot has trapped set/way ops, but dirty metadata and
+ * page-table writes still must reach PoC before EL/cache/MMU transitions.
+ */
+BEGIN_FUNC(bf2_dcache_clean_range)
+    cmp     x0, x1
+    b.hs    2f
+
+    mrs     x2, ctr_el0
+    ubfx    x2, x2, #16, #4
+    mov     x3, #4
+    lsl     x2, x3, x2
+    sub     x3, x2, #1
+    bic     x0, x0, x3
+1:
+    dc      cvac, x0
+    add     x0, x0, x2
+    cmp     x0, x1
+    b.lo    1b
+2:
+    dsb     sy
+    isb
+    ret
+END_FUNC(bf2_dcache_clean_range)
+#endif
 
 BEGIN_FUNC(arm_enable_mmu)
     /* We call nested functions, follow the ABI. */

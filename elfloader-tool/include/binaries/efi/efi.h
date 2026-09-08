@@ -54,6 +54,13 @@ typedef struct {
     uint32_t reserved;
 } efi_table_hdr_t;
 
+typedef struct efi_simple_text_output_protocol efi_simple_text_output_protocol_t;
+typedef unsigned long (*efi_text_output_string_t)(efi_simple_text_output_protocol_t *, uint16_t *);
+struct efi_simple_text_output_protocol {
+    void *reset;
+    efi_text_output_string_t output_string;
+};
+
 typedef struct {
     efi_table_hdr_t hdr;
     void *fw_vendor;
@@ -80,6 +87,7 @@ extern efi_system_table_t *__efi_system_table;
 
 #define EFI_SUCCESS                     0
 #define EFI_LOAD_ERROR                  (1 | EFI_ERROR_FLAG)
+#define EFI_INVALID_PARAMETER           (2 | EFI_ERROR_FLAG)
 #define EFI_BUFFER_TOO_SMALL            (5 | EFI_ERROR_FLAG)
 
 /* EFI Memory types: */
@@ -134,13 +142,17 @@ typedef struct {
     unsigned long (*free_pool)(void *);
     uintptr_t padding_2[19];
     unsigned long (*exit_boot_services)(void *, unsigned long);
-    uintptr_t padding_3[17];
+    unsigned long (*get_next_monotonic_count)(uint64_t *);
+    unsigned long (*stall)(unsigned long);
+    uintptr_t padding_3[15];
 } efi_boot_services_t;
 
 int efi_guideq(efi_guid_t a, efi_guid_t b);
 efi_boot_services_t *get_efi_boot_services(void);
 
 void efi_early_init(uintptr_t application_handle, uintptr_t efi_system_table);
+void efi_conout_puts(const char *s);
+void efi_stall(unsigned long usec);
 unsigned long efi_exit_boot_services(void);
 void *efi_get_fdt(void);
 

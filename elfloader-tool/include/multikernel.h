@@ -7,7 +7,7 @@
  * across the ARM cluster's cores, one kernel per core, each kernel a
  * verified unicore seL4 instance built at a distinct KernelArmRamBase.
  *
- * MVP-Q scope: N=2 (kernel_0 on core 0, kernel_1 on core 1, both AArch64).
+ * BF2 scope: up to N=8, one independent AArch64 kernel per Cortex-A72 core.
  */
 
 #pragma once
@@ -42,9 +42,10 @@ struct multikernel_entry {
     size_t  dtb_size;
 };
 
-/* For MVP-Q we statically allocate two slots — one per A35 core. */
-#define MULTIKERNEL_MAX_KERNELS 2
+/* BlueField-2 has eight Cortex-A72 cores. */
+#define MULTIKERNEL_MAX_KERNELS 8
 
+extern unsigned int multikernel_count;
 extern struct multikernel_entry multikernel_entries[MULTIKERNEL_MAX_KERNELS];
 
 /* Implemented in arch-arm/multikernel.c — load both kernel+rootserver pairs

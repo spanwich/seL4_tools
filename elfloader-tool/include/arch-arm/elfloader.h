@@ -31,6 +31,9 @@ void init_hyp_boot_vspace(struct image_info *kernel_info);
 
 /* Assembly functions. */
 extern void flush_dcache(void);
+#ifdef CONFIG_PLAT_MLXBF2
+extern void bf2_dcache_clean_range(uintptr_t start, uintptr_t end);
+#endif
 extern void cpu_idle(void);
 
 

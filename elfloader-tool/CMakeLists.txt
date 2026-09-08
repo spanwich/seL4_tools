@@ -8,89 +8,8 @@ cmake_minimum_required(VERSION 3.16.0)
 
 project(elfloader C ASM)
 
-# x86_64 multikernel-AMP path. The upstream elfloader targets Arm/RISC-V only;
-# this branch implements a minimal Multiboot-v1-bootable bootloader for
-# qemu-system-x86_64 (sub-step 1: print on COM1 and halt; later sub-steps add
-# CPIO/ELF loading and the K0/K1 jumps). Keeps the ARM pipeline below
-# completely untouched.
-if(KernelArchX86 AND KernelSel4ArchX86_64)
-    if(NOT KERNEL_FLAGS_PATH)
-        message(FATAL_ERROR "KERNEL_FLAGS_PATH is not set.")
-    endif()
-    include(${KERNEL_FLAGS_PATH})
-
-    set(configure_string "")
-    add_config_library(elfloader "${configure_string}")
-
-    file(
-        GLOB x86_64_files
-            src/arch-x86/64/*.c
-            src/arch-x86/64/*.S
-    )
-
-    add_executable(elfloader EXCLUDE_FROM_ALL ${x86_64_files})
-
-    target_include_directories(elfloader
-        PRIVATE
-            "include"
-            "include/arch-x86"
-            "include/arch-x86/64"
-            "${CMAKE_CURRENT_BINARY_DIR}/gen_headers"
-    )
-
-    # No libgcc — we're 32-bit freestanding and the host system only ships
-    # 64-bit libgcc. Our code uses no compiler intrinsics that would need it.
-    target_link_libraries(elfloader PRIVATE elfloader_Config sel4_autoconf)
-
-    # IMAGE_START_ADDR — load address of the elfloader binary. 1 MiB is the
-    # conventional Multiboot landing pad and lies safely below K0 (0x10000000).
-    if(NOT IMAGE_START_ADDR)
-        set(IMAGE_START_ADDR "0x100000")
-    endif()
-    set(IMAGE_START_ADDR_H "${CMAKE_CURRENT_BINARY_DIR}/gen_headers/image_start_addr.h")
-    file(GENERATE OUTPUT ${IMAGE_START_ADDR_H} CONTENT "
-#pragma once
-#define IMAGE_START_ADDR ${IMAGE_START_ADDR}
-")
-
-    # Preprocess linker script with the C preprocessor.
-    set(linkerScript "${CMAKE_CURRENT_LIST_DIR}/src/arch-x86/64/elfloader.lds")
-    separate_arguments(c_arguments NATIVE_COMMAND "${CMAKE_C_FLAGS}")
-    add_custom_command(
-        OUTPUT "linker.lds_pp"
-        COMMAND
-            ${CMAKE_C_COMPILER} ${c_arguments}
-            "-I${CMAKE_CURRENT_BINARY_DIR}/gen_headers"
-            -P -E -o linker.lds_pp -x c ${linkerScript}
-        DEPENDS ${linkerScript}
-        VERBATIM
-    )
-    add_custom_target(elfloader_linker DEPENDS linker.lds_pp)
-    add_dependencies(elfloader elfloader_linker)
-
-    # Compile + link flags for a freestanding 32-bit Multiboot binary.
-    # QEMU's Multiboot v1 loader only accepts ELF32 — and the seL4 x86_64
-    # kernel's entry (`head.S:269`) is itself 32-bit and transitions to long
-    # mode internally — so the elfloader stays pure 32-bit throughout.
-    # `-Wa,--32` overrides the inherited `-Wa,--64` from the kernel's global
-    # ASM flags (last `-Wa,--XX` wins for GAS).
-    target_compile_options(elfloader PRIVATE
-        -m32 -Wa,--32 -ffreestanding -fno-builtin -fno-stack-protector
-        -fno-pic -fno-pie -fno-common
-        -mno-sse -mno-mmx -mno-sse2 -mno-3dnow
-        -Wall -Wextra
-    )
-    # `-Wl,-m,elf_i386` overrides the inherited `-Wl,-m,elf_x86_64` from the
-    # kernel's global flags — last `-m,...` wins for ld.
-    set_property(TARGET elfloader APPEND_STRING PROPERTY LINK_FLAGS
-        " -m32 -Wl,-m,elf_i386 -Wl,-T ${CMAKE_CURRENT_BINARY_DIR}/linker.lds_pp -nostdlib -nodefaultlibs -static -no-pie -Wl,--build-id=none"
-    )
-
-    return()
-endif()
-
 if(KernelArchX86)
-    # This project is only used on Arm or RISC-V (32-bit x86 remains unsupported)
+    # This project is only used on Arm or RISC-V
     return()
 endif()
 
@@ -363,40 +282,65 @@ add_custom_command(
 )
 list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/rootserver")
 
-# Multikernel-AMP: bundle a second pre-built (kernel + rootserver + dtb) tuple
-# alongside the primary one. The primary kernel/rootserver are kernel_0;
-# the cache-var-supplied paths become kernel_1 in the CPIO.
-# The C-side (multikernel.c) loads kernel_1.elf and rootserver_1 by name.
+# Multikernel-AMP: bundle additional pre-built kernel/rootserver/DTB tuples
+# alongside the primary tuple. The primary kernel/rootserver are kernel/rootserver;
+# cache-var-supplied paths become kernel_N.elf, rootserver_N, kernel_N.dtb.
 if(ElfloaderMultikernel)
-    if(NOT MULTIKERNEL_K1_KERNEL_ELF OR NOT EXISTS "${MULTIKERNEL_K1_KERNEL_ELF}")
-        message(FATAL_ERROR "MULTIKERNEL=ON but MULTIKERNEL_K1_KERNEL_ELF not set or missing: '${MULTIKERNEL_K1_KERNEL_ELF}'")
+    if(NOT MULTIKERNEL_COUNT)
+        set(MULTIKERNEL_COUNT 2)
     endif()
-    if(NOT MULTIKERNEL_K1_ROOTSERVER OR NOT EXISTS "${MULTIKERNEL_K1_ROOTSERVER}")
-        message(FATAL_ERROR "MULTIKERNEL=ON but MULTIKERNEL_K1_ROOTSERVER not set or missing: '${MULTIKERNEL_K1_ROOTSERVER}'")
+    math(EXPR MULTIKERNEL_LAST_INDEX "${MULTIKERNEL_COUNT} - 1")
+    if(MULTIKERNEL_LAST_INDEX LESS 1)
+        message(FATAL_ERROR "MULTIKERNEL=ON requires MULTIKERNEL_COUNT >= 2")
     endif()
-    add_custom_command(
-        OUTPUT "kernel_1.elf"
-        COMMAND ${CMAKE_STRIP} "${MULTIKERNEL_K1_KERNEL_ELF}" -o ${CMAKE_CURRENT_BINARY_DIR}/kernel_1.elf
-        VERBATIM
-        DEPENDS "${MULTIKERNEL_K1_KERNEL_ELF}"
-    )
-    list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel_1.elf")
-    add_custom_command(
-        OUTPUT "rootserver_1"
-        COMMAND ${CMAKE_STRIP} "${MULTIKERNEL_K1_ROOTSERVER}" -o ${CMAKE_CURRENT_BINARY_DIR}/rootserver_1
-        VERBATIM
-        DEPENDS "${MULTIKERNEL_K1_ROOTSERVER}"
-    )
-    list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/rootserver_1")
-    if(MULTIKERNEL_K1_DTB AND EXISTS "${MULTIKERNEL_K1_DTB}")
-        # Stage k1 dtb under a renamed file so MakeCPIO records it as kernel_1.dtb
+    if(MULTIKERNEL_LAST_INDEX GREATER 7)
+        message(FATAL_ERROR "MULTIKERNEL_COUNT=${MULTIKERNEL_COUNT} exceeds BF2 maximum of 8 kernels")
+    endif()
+    add_compile_definitions(MULTIKERNEL_COUNT=${MULTIKERNEL_COUNT})
+    if(MULTIKERNEL_DISPATCH_SECONDARIES)
+        add_compile_definitions(MULTIKERNEL_DISPATCH_SECONDARIES=1)
+    endif()
+    if(MULTIKERNEL_DISPATCH_AFTER_MMU)
+        add_compile_definitions(MULTIKERNEL_DISPATCH_AFTER_MMU=1)
+    endif()
+
+    foreach(mk_idx RANGE 1 ${MULTIKERNEL_LAST_INDEX})
+        set(mk_kernel_var "MULTIKERNEL_K${mk_idx}_KERNEL_ELF")
+        set(mk_rootserver_var "MULTIKERNEL_K${mk_idx}_ROOTSERVER")
+        set(mk_dtb_var "MULTIKERNEL_K${mk_idx}_DTB")
+        if(NOT ${mk_kernel_var} OR NOT EXISTS "${${mk_kernel_var}}")
+            message(FATAL_ERROR "MULTIKERNEL=ON but ${mk_kernel_var} not set or missing: '${${mk_kernel_var}}'")
+        endif()
+        if(NOT ${mk_rootserver_var} OR NOT EXISTS "${${mk_rootserver_var}}")
+            message(FATAL_ERROR "MULTIKERNEL=ON but ${mk_rootserver_var} not set or missing: '${${mk_rootserver_var}}'")
+        endif()
+
         add_custom_command(
-            OUTPUT "kernel_1.dtb"
-            COMMAND ${CMAKE_COMMAND} -E copy "${MULTIKERNEL_K1_DTB}" ${CMAKE_CURRENT_BINARY_DIR}/kernel_1.dtb
-            DEPENDS "${MULTIKERNEL_K1_DTB}"
+            OUTPUT "kernel_${mk_idx}.elf"
+            COMMAND ${CMAKE_STRIP} "${${mk_kernel_var}}" -o ${CMAKE_CURRENT_BINARY_DIR}/kernel_${mk_idx}.elf
+            VERBATIM
+            DEPENDS "${${mk_kernel_var}}"
         )
-        list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel_1.dtb")
-    endif()
+        list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel_${mk_idx}.elf")
+
+        add_custom_command(
+            OUTPUT "rootserver_${mk_idx}"
+            COMMAND ${CMAKE_STRIP} "${${mk_rootserver_var}}" -o ${CMAKE_CURRENT_BINARY_DIR}/rootserver_${mk_idx}
+            VERBATIM
+            DEPENDS "${${mk_rootserver_var}}"
+        )
+        list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/rootserver_${mk_idx}")
+
+        if(${mk_dtb_var} AND EXISTS "${${mk_dtb_var}}")
+            add_custom_command(
+                OUTPUT "kernel_${mk_idx}.dtb"
+                COMMAND ${CMAKE_COMMAND} -E copy "${${mk_dtb_var}}" ${CMAKE_CURRENT_BINARY_DIR}/kernel_${mk_idx}.dtb
+                VERBATIM
+                DEPENDS "${${mk_dtb_var}}"
+            )
+            list(APPEND cpio_files "${CMAKE_CURRENT_BINARY_DIR}/kernel_${mk_idx}.dtb")
+        endif()
+    endforeach()
 endif()
 
 if(NOT ${ElfloaderHashInstructions} STREQUAL "hash_none")
