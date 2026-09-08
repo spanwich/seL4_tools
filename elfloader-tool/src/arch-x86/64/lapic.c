@@ -55,7 +55,12 @@ static void busy_wait_us(uint32_t us)
 /* Spin until the ICR's Delivery Status bit clears (bit 12 of ICR low). */
 static void icr_wait(void)
 {
+    uint32_t remaining = 10000000;
     while (mmio_r32(LAPIC_ICR_LO) & (1u << 12)) {
+        if (!--remaining) {
+            uart_puts("[lapic] FAIL: ICR delivery timeout\n");
+            for (;;) asm volatile("cli; hlt");
+        }
         asm volatile("pause");
     }
 }

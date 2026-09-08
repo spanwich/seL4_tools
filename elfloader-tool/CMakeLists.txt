@@ -8,6 +8,38 @@ cmake_minimum_required(VERSION 3.16.0)
 
 project(elfloader C ASM)
 
+if(KernelArchX86 AND KernelSel4ArchX86_64)
+    include(${KERNEL_FLAGS_PATH})
+    set(configure_string "")
+    add_config_library(elfloader "${configure_string}")
+    set(x86_src src/arch-x86/64)
+    if(OPTIPLEX_IDLE)
+        set(boot_src ${x86_src}/idle_boot.c)
+    else()
+        set(boot_src ${x86_src}/sys_boot.c)
+    endif()
+    add_executable(elfloader EXCLUDE_FROM_ALL ${boot_src}
+        ${x86_src}/console.c ${x86_src}/lapic.c
+        ${x86_src}/crt0.S ${x86_src}/ap_trampoline.S)
+    target_include_directories(elfloader PRIVATE include/arch-x86/64)
+    target_link_libraries(elfloader PRIVATE elfloader_Config sel4_autoconf)
+    file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/image_start_addr.h
+         CONTENT "#define IMAGE_START_ADDR 0x100000\n")
+    set(linkerScript ${CMAKE_CURRENT_LIST_DIR}/${x86_src}/elfloader.lds)
+    add_custom_command(OUTPUT linker.lds_pp
+        COMMAND ${CMAKE_C_COMPILER} -I${CMAKE_CURRENT_BINARY_DIR}
+            -P -E -o linker.lds_pp -x c ${linkerScript}
+        DEPENDS ${linkerScript} VERBATIM)
+    add_custom_target(elfloader_linker DEPENDS linker.lds_pp)
+    add_dependencies(elfloader elfloader_linker)
+    target_compile_options(elfloader PRIVATE -m32 -Wa,--32 -ffreestanding
+        -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-common
+        -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -Wall -Wextra -Werror)
+    set_property(TARGET elfloader APPEND_STRING PROPERTY LINK_FLAGS
+        " -m32 -Wl,-m,elf_i386 -Wl,-T ${CMAKE_CURRENT_BINARY_DIR}/linker.lds_pp -nostdlib -nodefaultlibs -static -no-pie -Wl,--build-id=none")
+    return()
+endif()
+
 if(KernelArchX86)
     # This project is only used on Arm or RISC-V
     return()
