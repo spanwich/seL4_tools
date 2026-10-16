@@ -195,6 +195,16 @@ config_option(
     DEPENDS "KernelArchARM AND KernelSel4ArchAarch64"
 )
 
+config_option(
+    ElfloaderMultikernelTrace MULTIKERNEL_TRACE
+    "Have the K1 trampoline write diagnostic records into the K0 rootserver page at
+     virtual 0x53b000. The rootserver must reserve that page (.mk_trace section),
+     otherwise core 1 overwrites live K0 memory."
+    DEFAULT OFF
+    DEPENDS "ElfloaderMultikernel"
+    DEFAULT_DISABLED OFF
+)
+
 add_config_library(elfloader "${configure_string}")
 
 add_compile_options(-D_XOPEN_SOURCE=700 -ffreestanding -Wall -Werror -Wextra)
@@ -374,6 +384,12 @@ if(ElfloaderMultikernel)
     endif()
     if(NOT MULTIKERNEL_K1_ROOTSERVER OR NOT EXISTS "${MULTIKERNEL_K1_ROOTSERVER}")
         message(FATAL_ERROR "MULTIKERNEL=ON but MULTIKERNEL_K1_ROOTSERVER not set or missing: '${MULTIKERNEL_K1_ROOTSERVER}'")
+    endif()
+    # When OFF, secondaries are loaded but left powered off; the booted K0
+    # rootserver starts them with PSCI CPU_ON (required on STM32MP2: an
+    # elfloader-time CPU_ON trips the TF-A RISAB firewall).
+    if(MULTIKERNEL_DISPATCH_SECONDARIES)
+        add_compile_definitions(MULTIKERNEL_DISPATCH_SECONDARIES=1)
     endif()
     add_custom_command(
         OUTPUT "kernel_1.elf"

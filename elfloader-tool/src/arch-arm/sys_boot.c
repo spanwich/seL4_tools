@@ -224,10 +224,15 @@ void continue_boot(int was_relocated)
             printf("ERROR: multikernel_load_all() failed\n");
             abort();
         }
+#ifdef MULTIKERNEL_DISPATCH_SECONDARIES
         if (multikernel_dispatch_secondaries() != 0) {
             printf("ERROR: multikernel_dispatch_secondaries() failed\n");
             abort();
         }
+#else
+        (void)multikernel_dispatch_secondaries;
+        printf("multikernel: secondaries loaded, left for K0 to start\n");
+#endif
     }
 #endif
 

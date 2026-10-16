@@ -341,6 +341,10 @@ static void mk_init_shared_pool(void)
 static void mk_init_trace_buffer(void)
 {
 #ifdef CONFIG_PLAT_STM32MP2
+#ifndef CONFIG_MULTIKERNEL_TRACE
+    /* paddr 0 makes mk_trace_record_phys a no-op */
+    mk_trace_buffer_paddr = 0;
+#else
     if (MK_TRACE_BUFFER_VADDR < user_info.virt_region_start ||
         (MK_TRACE_BUFFER_VADDR + MK_TRACE_BUFFER_SIZE) > user_info.virt_region_end) {
         printf("multikernel: trace vaddr %p outside K0 rootserver [%p..%p)\n",
@@ -357,6 +361,7 @@ static void mk_init_trace_buffer(void)
                (unsigned long long)mk_secondary_entry_delay_ticks,
                (unsigned long long)mk_secondary_step_delay_ticks);
     }
+#endif
     mk_clean_range((uintptr_t)&mk_trace_buffer_paddr,
                    (uintptr_t)(&mk_trace_buffer_paddr + 1));
     mk_clean_range((uintptr_t)&mk_secondary_entry_delay_ticks,
