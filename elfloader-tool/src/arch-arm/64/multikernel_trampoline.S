@@ -22,6 +22,9 @@
 #define MK_STACK_BITS      12
 #define BF2_SHARED_READY   4
 
+#ifdef CONFIG_ARM_HYPERVISOR_SUPPORT
+.extern arm_enable_hyp_mmu
+#else
 #define SCTLR_M            0x1
 #define SCTLR_C            0x4
 #define SCTLR_I            0x1000
@@ -32,6 +35,7 @@
 
 .extern arm_enable_mmu
 .extern arm_vector_table
+#endif
 .extern mk_secondary_stack
 .extern multikernel_entries
 
@@ -68,6 +72,12 @@ multikernel_secondary_startup:
 2:
 #endif
 
+#ifdef CONFIG_ARM_HYPERVISOR_SUPPORT
+    /* A hypervisor seL4 kernel starts and remains at EL2. Its _start accesses
+     * SCTLR_EL2 immediately, so dropping the secondary to EL1 would cause an
+     * undefined-instruction exception at kernel entry. */
+    bl      arm_enable_hyp_mmu
+#else
     mrs     x9, CurrentEL
     cmp     x9, #(2 << 2)
     b.eq    .Lfrom_el2
@@ -133,6 +143,7 @@ multikernel_secondary_startup:
 
     /* Enable EL1 MMU using the shared boot tables prepared by K0 elfloader. */
     bl      arm_enable_mmu
+#endif
 
     adrp    x9, multikernel_entries
     add     x9, x9, :lo12:multikernel_entries

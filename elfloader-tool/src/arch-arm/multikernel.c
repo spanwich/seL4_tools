@@ -57,7 +57,7 @@ uint64_t mk_trace_buffer_paddr = 0;
 uint64_t mk_secondary_entry_delay_ticks = MK_SECONDARY_ENTRY_DELAY_TICKS;
 uint64_t mk_secondary_step_delay_ticks = MK_SECONDARY_STEP_DELAY_TICKS;
 
-#ifndef CONFIG_PLAT_MLXBF2
+#ifdef CONFIG_PLAT_STM32MP2
 extern void multikernel_secondary_park(void);
 
 extern void mk_trace_record_phys(void);
@@ -195,7 +195,6 @@ __asm__(
     "    .rept 16\n    b mk_core1_exc\n    .balign 0x80\n    .endr\n"
     ".size mk_core1_trampoline, . - mk_core1_trampoline\n"
 );
-#endif
 
 __asm__(
     ".section .text\n"
@@ -260,9 +259,10 @@ __asm__(
     "    ldr  x0, [x9]\n"
     "    b    mk_trace_delay_ticks\n"
 );
+#endif
 
 
-static const unsigned long bf2_mpidr[MULTIKERNEL_MAX_KERNELS] = {
+static const unsigned long multikernel_mpidr[MULTIKERNEL_MAX_KERNELS] = {
     0x0, 0x1, 0x100, 0x101, 0x200, 0x201, 0x300, 0x301
 };
 
@@ -340,7 +340,7 @@ static void mk_init_shared_pool(void)
 
 static void mk_init_trace_buffer(void)
 {
-#ifndef CONFIG_PLAT_MLXBF2
+#ifdef CONFIG_PLAT_STM32MP2
     if (MK_TRACE_BUFFER_VADDR < user_info.virt_region_start ||
         (MK_TRACE_BUFFER_VADDR + MK_TRACE_BUFFER_SIZE) > user_info.virt_region_end) {
         printf("multikernel: trace vaddr %p outside K0 rootserver [%p..%p)\n",
@@ -448,7 +448,7 @@ static int load_secondary(unsigned int idx, void const *cpio, size_t cpio_len)
     mk_clean_range((uintptr_t)rootserver_info.phys_region_start,
                    (uintptr_t)rootserver_info.phys_region_end);
 
-#ifndef CONFIG_PLAT_MLXBF2
+#ifdef CONFIG_PLAT_STM32MP2
     /* Stage the "core1 alive" stub 4 MiB into this kernel's region (well above
      * its kernel/dtb/rootserver), in memory K0 never owns, so it survives K0's
      * boot. The booted-K0 rootserver PSCI-CPU_ON's core 1 to this address. */
@@ -491,7 +491,7 @@ int multikernel_load_all(void)
         return -1;
     }
 
-    printf("multikernel: loading %u-kernel BF2 bundle\n", multikernel_count);
+    printf("multikernel: loading %u-kernel ARM bundle\n", multikernel_count);
     mk_init_shared_pool();
     mk_init_trace_buffer();
     for (unsigned int idx = 1; idx < multikernel_count; idx++) {
@@ -508,13 +508,13 @@ int multikernel_dispatch_secondaries(void)
 {
     dsb();
 
-    #ifdef CONFIG_PLAT_MLXBF2
-    unsigned long entry = (unsigned long)(uintptr_t)multikernel_secondary_startup;
-#else
+#ifdef CONFIG_PLAT_STM32MP2
     unsigned long entry = (unsigned long)(uintptr_t)multikernel_secondary_park;
+#else
+    unsigned long entry = (unsigned long)(uintptr_t)multikernel_secondary_startup;
 #endif
     for (unsigned int idx = 1; idx < multikernel_count; idx++) {
-        unsigned long target_cpu = bf2_mpidr[idx];
+        unsigned long target_cpu = multikernel_mpidr[idx];
         unsigned long ctx_id = idx;
         printf("multikernel: PSCI CPU_ON K%u mpidr=%lx -> %p ctx=%lu\n",
                idx, target_cpu, (void *)entry, ctx_id);
