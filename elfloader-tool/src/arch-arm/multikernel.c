@@ -57,7 +57,7 @@ uint64_t mk_trace_buffer_paddr = 0;
 uint64_t mk_secondary_entry_delay_ticks = MK_SECONDARY_ENTRY_DELAY_TICKS;
 uint64_t mk_secondary_step_delay_ticks = MK_SECONDARY_STEP_DELAY_TICKS;
 
-#ifdef CONFIG_PLAT_STM32MP2
+#if defined(CONFIG_PLAT_STM32MP2) || defined(CONFIG_PLAT_STM32MP25X)
 extern void multikernel_secondary_park(void);
 
 extern void mk_trace_record_phys(void);
@@ -340,7 +340,7 @@ static void mk_init_shared_pool(void)
 
 static void mk_init_trace_buffer(void)
 {
-#ifdef CONFIG_PLAT_STM32MP2
+#if defined(CONFIG_PLAT_STM32MP2) || defined(CONFIG_PLAT_STM32MP25X)
     if (MK_TRACE_BUFFER_VADDR < user_info.virt_region_start ||
         (MK_TRACE_BUFFER_VADDR + MK_TRACE_BUFFER_SIZE) > user_info.virt_region_end) {
         printf("multikernel: trace vaddr %p outside K0 rootserver [%p..%p)\n",
@@ -448,7 +448,7 @@ static int load_secondary(unsigned int idx, void const *cpio, size_t cpio_len)
     mk_clean_range((uintptr_t)rootserver_info.phys_region_start,
                    (uintptr_t)rootserver_info.phys_region_end);
 
-#ifdef CONFIG_PLAT_STM32MP2
+#if defined(CONFIG_PLAT_STM32MP2) || defined(CONFIG_PLAT_STM32MP25X)
     /* Stage the "core1 alive" stub 4 MiB into this kernel's region (well above
      * its kernel/dtb/rootserver), in memory K0 never owns, so it survives K0's
      * boot. The booted-K0 rootserver PSCI-CPU_ON's core 1 to this address. */
@@ -508,7 +508,7 @@ int multikernel_dispatch_secondaries(void)
 {
     dsb();
 
-#ifdef CONFIG_PLAT_STM32MP2
+#if defined(CONFIG_PLAT_STM32MP2) || defined(CONFIG_PLAT_STM32MP25X)
     unsigned long entry = (unsigned long)(uintptr_t)multikernel_secondary_park;
 #else
     unsigned long entry = (unsigned long)(uintptr_t)multikernel_secondary_startup;

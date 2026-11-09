@@ -35,7 +35,7 @@
 .extern bf2_saved_dtb
 .extern bf2_saved_dtb_size
 
-#if defined(CONFIG_MULTIKERNEL) && defined(CONFIG_PLAT_STM32MP2)
+#if defined(CONFIG_MULTIKERNEL) && (defined(CONFIG_PLAT_STM32MP2) || defined(CONFIG_PLAT_STM32MP25X))
 .extern mk_trace_record_phys
 .extern mk_trace_step_delay
 .macro mk_trace tag
