@@ -17,6 +17,7 @@
 #include <cpuid.h>
 #ifdef CONFIG_PLAT_MLXBF2
 #include <mode/structures.h>
+#include <arch-arm/bf2_oob_quiesce.h>
 #endif
 
 #include <binaries/efi/efi.h>
@@ -454,6 +455,14 @@ void main(UNUSED void *arg)
     bootloader_dtb = efi_get_fdt();
 #endif
 
+#endif
+
+#ifdef CONFIG_PLAT_MLXBF2
+    /* UEFI is out of the way (EFI path: ExitBootServices succeeded; RShim
+     * Linux-Image path: UEFI already exited). Kill stale OOB GigE DMA before
+     * any image is loaded and before any kernel / secondary is dispatched.
+     * Runs once on the boot CPU (this is the single-threaded loader main). */
+    bf2_oob_quiesce();
 #endif
 
     if (bootloader_dtb) {
